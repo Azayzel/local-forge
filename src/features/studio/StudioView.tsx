@@ -5,6 +5,7 @@ import {
   ImagePlus,
   Maximize2,
   RotateCcw,
+  ScanText,
   Sparkles,
   Square,
   Trash2,
@@ -12,14 +13,18 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createDefaultStudioState,
   type ForgeRun,
   type LibraryAsset,
   type StudioState,
 } from "../../state/workspace";
-import type { EnhancementModelKind, ImageModel } from "../../types";
+import type {
+  EnhancementModelKind,
+  ImageModel,
+  VisionDescribeMode,
+} from "../../types";
 
 const stylePresets = [
   { name: "Editorial", description: "Natural light / tactile" },
@@ -38,6 +43,8 @@ interface StudioViewProps {
   nsfwSegmenterConfigured: boolean;
   installingEnhancement: EnhancementModelKind | null;
   enhancementInstallError: string;
+  visionAvailable: boolean;
+  visionModel: string;
   preview?: {
     src: string;
     step?: number;
@@ -51,6 +58,10 @@ interface StudioViewProps {
   onRemoveModel: (model: ImageModel) => void;
   onOpenSettings: () => void;
   onInstallEnhancement: (kind: EnhancementModelKind) => void;
+  onDescribeImage: (
+    imageUrl: string,
+    mode: VisionDescribeMode,
+  ) => Promise<string>;
 }
 
 export function StudioView({
@@ -63,6 +74,8 @@ export function StudioView({
   nsfwSegmenterConfigured,
   installingEnhancement,
   enhancementInstallError,
+  visionAvailable,
+  visionModel,
   preview,
   onChange,
   onGenerate,
@@ -72,9 +85,16 @@ export function StudioView({
   onRemoveModel,
   onOpenSettings,
   onInstallEnhancement,
+  onDescribeImage,
 }: StudioViewProps) {
   const [zoom, setZoom] = useState(67);
   const [notice, setNotice] = useState("");
+  const [visionBusy, setVisionBusy] = useState<VisionDescribeMode | null>(null);
+  const [visionDescription, setVisionDescription] = useState("");
+  const [visionError, setVisionError] = useState("");
+  const visionRequestId = useRef(0);
+  const activeAsset = useRef(studio.activeAsset);
+  activeAsset.current = studio.activeAsset;
   const selectedModel = imageModels.find((model) => model.id === studio.model);
   const artworkSource = preview?.src ?? studio.activeAsset;
   const previewLabel =
@@ -83,6 +103,47 @@ export function StudioView({
       : preview
         ? "Denoising"
         : "Preview";
+
+  useEffect(() => {
+    visionRequestId.current += 1;
+    setVisionBusy(null);
+    setVisionDescription("");
+    setVisionError("");
+  }, [studio.activeAsset]);
+
+  async function describeActiveImage(mode: VisionDescribeMode) {
+    if (!studio.activeAsset || visionBusy) return;
+    const imageUrl = studio.activeAsset;
+    const requestId = ++visionRequestId.current;
+    setVisionBusy(mode);
+    setVisionError("");
+    try {
+      const text = await onDescribeImage(imageUrl, mode);
+      if (
+        requestId !== visionRequestId.current ||
+        imageUrl !== activeAsset.current
+      ) {
+        return;
+      }
+      if (mode === "prompt") {
+        onChange({ prompt: text });
+      } else {
+        setVisionDescription(text);
+      }
+    } catch (error) {
+      if (
+        requestId !== visionRequestId.current ||
+        imageUrl !== activeAsset.current
+      ) {
+        return;
+      }
+      setVisionError(
+        error instanceof Error ? error.message : "Image description failed.",
+      );
+    } finally {
+      if (requestId === visionRequestId.current) setVisionBusy(null);
+    }
+  }
 
   async function scanModels() {
     try {
@@ -340,7 +401,14 @@ export function StudioView({
             )}
           </div>
 
-          <label className="field-label">Prompt</label>
+          <div className="studio-prompt-heading">
+            <label className="field-label">Prompt</label>
+            <span
+              title={visionModel ? `Vision model: ${visionModel}` : undefined}
+            >
+              {visionModel || "No vision model"}
+            </span>
+          </div>
           <textarea
             className="prompt-field"
             value={studio.prompt}
@@ -349,7 +417,48 @@ export function StudioView({
           />
           <div className="prompt-meta">
             <span>{studio.prompt.length} chars</span>
+            <div className="prompt-image-actions">
+              <button
+                type="button"
+                title="Describe the selected image"
+                disabled={!visionAvailable || visionBusy !== null}
+                onClick={() => void describeActiveImage("description")}
+              >
+                <ScanText size={12} />
+                {visionBusy === "description"
+                  ? "Describing..."
+                  : "Describe image"}
+              </button>
+              <button
+                type="button"
+                title="Create a generation prompt from the selected image"
+                disabled={!visionAvailable || visionBusy !== null}
+                onClick={() => void describeActiveImage("prompt")}
+              >
+                <WandSparkles size={12} />
+                {visionBusy === "prompt" ? "Creating..." : "Create prompt"}
+              </button>
+            </div>
           </div>
+          {visionError && (
+            <p className="studio-vision-error" role="alert">
+              {visionError}
+            </p>
+          )}
+          {visionDescription && (
+            <section className="studio-vision-output" aria-live="polite">
+              <div>
+                <strong>Image description</strong>
+                <button
+                  type="button"
+                  onClick={() => onChange({ prompt: visionDescription })}
+                >
+                  Use as prompt
+                </button>
+              </div>
+              <p>{visionDescription}</p>
+            </section>
+          )}
 
           <label className="field-label" htmlFor="negative-prompt">
             Negative prompt

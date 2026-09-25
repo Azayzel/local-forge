@@ -37,12 +37,15 @@ import type {
   RuntimeHealth,
   SystemSnapshot,
   TrainingRequest,
+  VisionDescribeRequest,
+  VisionDescribeResult,
 } from "../src/types";
 import { runMcpChat } from "./chat";
 import {
   discoverEnhancementModels,
   installEnhancementModel,
 } from "./enhancement-models";
+import { describeImageWithOllama } from "./vision";
 import { LocalJobManager } from "./jobs";
 import { closeMcpConnections, disconnectMcpServer, testMcpServer } from "./mcp";
 import { discoverModelCatalog } from "./model-catalog";
@@ -197,11 +200,29 @@ async function imageForOllama(value: string): Promise<string> {
   if (value.startsWith(`${ATTACHMENT_SCHEME}:`)) {
     return (await fs.readFile(attachmentFilePath(value))).toString("base64");
   }
+  if (value.startsWith(`${OUTPUT_SCHEME}:`)) {
+    return (await fs.readFile(outputImageFilePath(value))).toString("base64");
+  }
   if (value.startsWith("data:")) {
     const separator = value.indexOf(",");
     return separator >= 0 ? value.slice(separator + 1) : value;
   }
-  return value;
+  if (/^\.?\/demo\/[A-Za-z0-9_-]+\.(?:png|jpe?g|webp)$/i.test(value)) {
+    const relative = value.replace(/^\.?\//, "");
+    const candidates = [
+      path.join(app.getAppPath(), "dist", relative),
+      path.join(app.getAppPath(), "public", relative),
+    ];
+    for (const candidate of candidates) {
+      try {
+        return (await fs.readFile(candidate)).toString("base64");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    throw new Error(`Bundled reference image was not found: ${value}`);
+  }
+  throw new Error("Unsupported Local Forge image URL.");
 }
 
 async function describeDiffusersModel(
@@ -666,6 +687,19 @@ function registerIpc(): void {
   ipcMain.handle("ollama:cancel-chat", (_event, requestId: string) => {
     activeChats.get(requestId)?.abort();
   });
+  ipcMain.handle(
+    "vision:describe",
+    async (
+      _event,
+      request: VisionDescribeRequest,
+    ): Promise<VisionDescribeResult> =>
+      describeImageWithOllama({
+        baseUrl: request.baseUrl,
+        model: request.model,
+        imageBase64: await imageForOllama(request.imageUrl),
+        mode: request.mode,
+      }),
+  );
   ipcMain.handle("ollama:pull", (event, request: PullRequest) =>
     pullModel(event.sender, request),
   );

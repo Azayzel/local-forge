@@ -21,6 +21,8 @@ import type {
   RuntimeHealth,
   SystemSnapshot,
   TrainingRequest,
+  VisionDescribeRequest,
+  VisionDescribeResult,
 } from "../src/types";
 
 function subscribe<T>(
@@ -67,6 +69,13 @@ const api: ForgeApi = {
       subscribe("ollama:chat-event", callback),
     onPullEvent: (callback: (event: PullStreamEvent) => void) =>
       subscribe("ollama:pull-event", callback),
+  },
+  vision: {
+    describe: (request: VisionDescribeRequest) =>
+      ipcRenderer.invoke(
+        "vision:describe",
+        request,
+      ) as Promise<VisionDescribeResult>,
   },
   catalog: {
     list: (refresh = false) =>

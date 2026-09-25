@@ -30,6 +30,21 @@ export interface ChatRequest {
   mcpServers?: McpServerConfig[];
 }
 
+export type VisionDescribeMode = "description" | "prompt";
+
+export interface VisionDescribeRequest {
+  baseUrl: string;
+  model: string;
+  imageUrl: string;
+  mode: VisionDescribeMode;
+}
+
+export interface VisionDescribeResult {
+  text: string;
+  model: string;
+  mode: VisionDescribeMode;
+}
+
 export interface McpServerConfig {
   id: string;
   name: string;
@@ -329,6 +344,9 @@ export interface ForgeApi {
     cancelPull: (requestId: string) => Promise<void>;
     onChatEvent: (callback: (event: ChatStreamEvent) => void) => () => void;
     onPullEvent: (callback: (event: PullStreamEvent) => void) => () => void;
+  };
+  vision: {
+    describe: (request: VisionDescribeRequest) => Promise<VisionDescribeResult>;
   };
   catalog: {
     list: (refresh?: boolean) => Promise<ModelCatalogResponse>;

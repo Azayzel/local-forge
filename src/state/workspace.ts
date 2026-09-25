@@ -183,7 +183,7 @@ export function createDefaultStudioState(): StudioState {
     upscale: false,
     upscaleFactor: 2,
     nsfwSegmentation: false,
-    activeAsset: "/demo/forge-01.jpg",
+    activeAsset: "./demo/forge-01.jpg",
   };
 }
 
@@ -206,7 +206,7 @@ export function createDefaultAssets(): LibraryAsset[] {
   return [
     {
       id: "sample-neon-observer",
-      src: "/demo/forge-01.jpg",
+      src: "./demo/forge-01.jpg",
       title: "Neon observer",
       source: "sample",
       width: 1200,
@@ -217,7 +217,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-quiet-geometry",
-      src: "/demo/forge-02.jpg",
+      src: "./demo/forge-02.jpg",
       title: "Quiet geometry",
       source: "sample",
       width: 1200,
@@ -228,7 +228,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-material-study",
-      src: "/demo/forge-03.jpg",
+      src: "./demo/forge-03.jpg",
       title: "Material study",
       source: "sample",
       width: 1200,
@@ -239,7 +239,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-open-country",
-      src: "/demo/forge-04.jpg",
+      src: "./demo/forge-04.jpg",
       title: "Open country",
       source: "sample",
       width: 1200,
@@ -301,6 +301,10 @@ function normalizeMcpServers(value: unknown): McpServerConfig[] {
       typeof server.headers === "object",
     ),
   );
+}
+
+function normalizeBundledAssetUrl(value: string): string {
+  return value.startsWith("/demo/") ? `.${value}` : value;
 }
 
 const MAX_RUN_LOGS = 200;
@@ -386,16 +390,22 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
       )
     : [];
   const assets = Array.isArray(candidate.assets)
-    ? candidate.assets.filter((asset): asset is LibraryAsset =>
-        Boolean(
-          asset &&
-          typeof asset.id === "string" &&
-          typeof asset.src === "string" &&
-          typeof asset.title === "string",
-        ),
-      )
+    ? candidate.assets
+        .filter((asset): asset is LibraryAsset =>
+          Boolean(
+            asset &&
+            typeof asset.id === "string" &&
+            typeof asset.src === "string" &&
+            typeof asset.title === "string",
+          ),
+        )
+        .map((asset) => ({
+          ...asset,
+          src: normalizeBundledAssetUrl(asset.src),
+        }))
     : fallback.assets;
   const studio = { ...fallback.studio, ...candidate.studio };
+  studio.activeAsset = normalizeBundledAssetUrl(studio.activeAsset);
   const tune = { ...fallback.tune, ...candidate.tune };
   if (studio.model === "Flux.1 Schnell") studio.model = "";
 

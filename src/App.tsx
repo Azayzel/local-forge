@@ -840,6 +840,8 @@ function App() {
               )}
               installingEnhancement={installingEnhancement}
               enhancementInstallError={enhancementInstallError}
+              visionAvailable={health.online && Boolean(selectedModelName)}
+              visionModel={selectedModelName}
               preview={
                 imagePreview &&
                 imagePreview.jobId === activeImageRun?.id &&
@@ -864,6 +866,15 @@ function App() {
               onRemoveModel={removeImageModel}
               onOpenSettings={() => selectView("settings")}
               onInstallEnhancement={(kind) => void installEnhancement(kind)}
+              onDescribeImage={async (imageUrl, mode) => {
+                const result = await forgeApi.vision.describe({
+                  baseUrl: workspace.settings.ollamaUrl,
+                  model: selectedModelName,
+                  imageUrl,
+                  mode,
+                });
+                return result.text;
+              }}
             />
           )}
           {workspace.activeView === "library" && (

@@ -213,6 +213,17 @@ describe("workspace state", () => {
     expect(restored.imageModels).toHaveLength(1);
     expect(restored.studio.model).toBe("D:/models/real-model");
   });
+
+  it("makes legacy bundled image URLs relative for packaged Electron", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.studio.activeAsset = "/demo/forge-01.jpg";
+    persisted.assets[0].src = "/demo/forge-01.jpg";
+
+    const restored = normalizeWorkspace(persisted);
+
+    expect(restored.studio.activeAsset).toBe("./demo/forge-01.jpg");
+    expect(restored.assets[0].src).toBe("./demo/forge-01.jpg");
+  });
 });
 
 describe("titleFromPrompt", () => {

@@ -116,6 +116,16 @@ function createBrowserApi(): ForgeApi {
         return () => pullListeners.delete(callback);
       },
     },
+    vision: {
+      describe: async (request) => ({
+        text:
+          request.mode === "prompt"
+            ? "editorial portrait, natural window light, centered composition, tactile detail"
+            : "An editorial portrait composed with natural window light and tactile detail.",
+        model: request.model,
+        mode: request.mode,
+      }),
+    },
     catalog: {
       list: async () => ({
         items: [],
