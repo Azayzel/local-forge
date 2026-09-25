@@ -1,0 +1,12 @@
+# Install a CUDA-compatible PyTorch build for your driver first.
+torch>=2.5,<3
+accelerate>=1.2,<2
+diffusers>=0.32,<1
+transformers>=4.47,<5
+safetensors>=0.5,<1
+pillow>=11,<13
+numpy>=2,<3
+opencv-python>=4.10,<5
+spandrel>=0.4,<1
+spandrel-extra-arches>=0.2,<1
+ultralytics>=8.3,<9

@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows:
+      - Tests
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package ${{ matrix.name }}
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            command: npm run dist -- --win --x64
+            artifact: windows
+            files: release/*.exe
+          - name: macOS
+            os: macos-latest
+            command: npm run dist -- --mac --universal
+            artifact: macos
+            files: release/*.dmg
+          - name: Linux
+            os: ubuntu-latest
+            command: npm run dist -- --linux --x64
+            artifact: linux
+            files: release/*.AppImage
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: ${{ matrix.command }}
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: main-${{ github.event.workflow_run.run_number }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          name: Local Forge main build ${{ github.event.workflow_run.run_number }}
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          body: |
+            Automated unsigned build from `${{ github.event.workflow_run.head_sha }}`.
+
+            Windows and macOS may show security warnings until release signing is configured.
+          files: |
+            artifacts/windows/*.exe
+            artifacts/macos/*.dmg
+            artifacts/linux/*.AppImage

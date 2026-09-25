@@ -1,0 +1,87 @@
+{
+  "name": "local-forge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A fast, local-first desktop workbench for open models.",
+  "author": "Local Forge contributors",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint src electron",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.5",
+    "@fontsource-variable/space-grotesk": "^5.2.9",
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "lucide-react": "^1.47.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^8.2.2",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "jsdom": "^25.0.1",
+    "oxlint": "^0.16.0",
+    "typescript": "~5.7.3",
+    "vite": "^6.1.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^5.0.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "io.localforge.desktop",
+    "productName": "Local Forge",
+    "icon": "build/icon.png",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "LICENSE",
+      "docs/THIRD_PARTY_ASSETS.md"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "electron-winstaller@5.4.0": true
+  }
+}
