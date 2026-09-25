@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - Tests
+    branches:
+      - main
     types:
       - completed
 
@@ -15,12 +17,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  package:
-    name: Package ${{ matrix.name }}
+  version:
+    name: Determine release version
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Compute prerelease version
+        id: version
+        env:
+          TEST_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const base = JSON.parse(readFileSync('package.json', 'utf8')).version.replace(/[+-].*$/, '');
+          if (!/^\d+\.\d+\.\d+$/.test(base) || !/^\d+$/.test(process.env.TEST_RUN_NUMBER)) {
+            throw new Error('Invalid release version or test run number');
+          }
+          const version = `${base}-main.${process.env.TEST_RUN_NUMBER}`;
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=v${version}\n`);
+          NODE
+
+  package:
+    name: Package ${{ matrix.name }}
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -41,13 +74,16 @@ jobs:
             artifact: linux
             files: release/*.AppImage
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Check out tested source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -58,43 +94,79 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set installer version
+        shell: bash
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts
+
       - name: Build package
-        run: ${{ matrix.command }}
+        run: ${{ matrix.command }} --publish never
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: installer-${{ matrix.artifact }}
           path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 7
 
   publish:
     name: Publish GitHub release
-    needs: package
+    needs: [version, package]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Download packages
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: installer-*
+          merge-multiple: true
 
-      - name: Publish prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: main-${{ github.event.workflow_run.run_number }}
-          target_commitish: ${{ github.event.workflow_run.head_sha }}
-          name: Local Forge main build ${{ github.event.workflow_run.run_number }}
-          prerelease: true
-          make_latest: false
-          generate_release_notes: true
-          body: |
-            Automated unsigned build from `${{ github.event.workflow_run.head_sha }}`.
+      - name: Validate installers and generate checksums
+        working-directory: artifacts
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for extension in exe dmg AppImage; do
+            files=(*."$extension")
+            if [[ ${#files[@]} -ne 1 || ! -s "${files[0]}" ]]; then
+              echo "::error::Expected one non-empty $extension installer"
+              exit 1
+            fi
+          done
+          sha256sum -- *.exe *.dmg *.AppImage > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
 
-            Windows and macOS may show security warnings until release signing is configured.
-          files: |
-            artifacts/windows/*.exe
-            artifacts/macos/*.dmg
-            artifacts/linux/*.AppImage
+      - name: Publish complete prerelease
+        working-directory: artifacts
+        shell: bash
+        run: |
+          state=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.RELEASE_TAG) | .draft')
+          if [[ "$state" == "false" ]]; then
+            echo "Release $RELEASE_TAG is already published; leaving its assets unchanged."
+            exit 0
+          fi
+          if [[ -z "$state" ]]; then
+            gh release create "$RELEASE_TAG" \
+              --target "$RELEASE_SHA" \
+              --title "Local Forge $RELEASE_TAG" \
+              --draft --prerelease --generate-notes \
+              --notes "Automated unsigned build from $RELEASE_SHA.
+
+          Installers: Windows x64 (.exe), macOS universal (.dmg), Linux x64 (.AppImage).
+          Verify downloads using SHA256SUMS.txt.
+          Windows and macOS may show security warnings until signing and notarization are configured."
+          elif [[ "$state" != "true" ]]; then
+            echo "::error::Unexpected release state: $state"
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" --clobber -- *.exe *.dmg *.AppImage SHA256SUMS.txt
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false

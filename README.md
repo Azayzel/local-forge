@@ -78,7 +78,23 @@ npm run lint
 npm run build
 ```
 
-`npm run dist` builds an installer for the current platform. Successful test runs on `main` also publish unsigned Windows, macOS, and Linux prereleases through GitHub Actions.
+`npm run dist` builds an installer for the current platform.
+
+## Automated releases
+
+Every push to `main` (including a merged pull request) runs tests, lint, and the application build. After those checks pass, GitHub Actions packages that exact commit for Windows x64 (`.exe`), macOS universal (`.dmg`, Intel and Apple Silicon), and Linux x64 (`.AppImage`).
+
+Download installers from [GitHub Releases](https://github.com/Azayzel/local-forge/releases). Each main build is an unsigned prerelease, tagged `v<package-version>-main.<test-run-number>` (for example, `v0.1.0-main.42`). The installer version matches the tag without its `v` prefix. These alpha builds are not marked as the latest stable release.
+
+All three installers and `SHA256SUMS.txt` are uploaded before the release is published. To verify a download, compare its SHA-256 hash with the matching entry in that file:
+
+```powershell
+Get-FileHash .\Local-Forge-installer.exe -Algorithm SHA256
+```
+
+Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS use `shasum -a 256 -c SHA256SUMS.txt`.
+
+Windows and macOS may show security warnings: these builds are not yet signed or notarized. See [release maintenance](CONTRIBUTING.md#release-maintenance) for setup, versioning, and retries.
 
 ## Project status
 
