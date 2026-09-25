@@ -9,10 +9,12 @@ export const NSFW_STUDIO_PROMPT =
 export const NSFW_STUDIO_NEGATIVE_PROMPT =
   "minor, child, teen, young-looking subject, age ambiguity, text, watermark, distorted anatomy, duplicate body parts, low detail";
 
+export function hasNsfwModelTag(...values: Array<string | undefined>): boolean {
+  return NSFW_MODEL_PATTERN.test(values.filter(Boolean).join(" "));
+}
+
 export function isNsfwImageModel(
   model: Pick<ImageModel, "id" | "name" | "path" | "architecture">,
 ): boolean {
-  return NSFW_MODEL_PATTERN.test(
-    [model.id, model.name, model.path, model.architecture].join(" "),
-  );
+  return hasNsfwModelTag(model.id, model.name, model.path, model.architecture);
 }

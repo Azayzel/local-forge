@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { forgeApi } from "../../lib/forge-api";
+import { hasNsfwModelTag } from "../../lib/nsfw";
 import {
   createDefaultTuneState,
   type ForgeRun,
@@ -300,11 +301,20 @@ export function TuneView({
 
 interface ActivityViewProps {
   runs: ForgeRun[];
+  nsfwConsent: boolean;
   onCancel: (id: string) => void;
   onReveal: (outputPath: string) => void;
   onRemove: (id: string) => void;
   onRetry: (run: ForgeRun) => void;
   onOpenImage: (run: ForgeRun) => void;
+}
+
+function isNsfwRun(run: ForgeRun): boolean {
+  const recipe = run.recipe;
+  return Boolean(
+    recipe?.kind === "image" &&
+    (recipe.nsfwDefaults || hasNsfwModelTag(recipe.modelId, recipe.modelName)),
+  );
 }
 
 function formatRunTime(value: string | undefined): string {
@@ -390,6 +400,7 @@ function RunRecipe({ run }: { run: ForgeRun }) {
 
 export function ActivityView({
   runs,
+  nsfwConsent,
   onCancel,
   onReveal,
   onRemove,
@@ -411,6 +422,9 @@ export function ActivityView({
       ? runs
       : runs.filter((run) => run.status === statusFilter);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+  const selectedRunRestricted = Boolean(
+    selectedRun && !nsfwConsent && isNsfwRun(selectedRun),
+  );
 
   async function copyLogs(run: ForgeRun) {
     const entries = run.logs?.length
@@ -534,7 +548,11 @@ export function ActivityView({
               >
                 <span>
                   <strong>{run.name}</strong>
-                  <small>{run.error ?? run.message ?? run.detail}</small>
+                  <small>
+                    {!nsfwConsent && isNsfwRun(run)
+                      ? "Adult content hidden"
+                      : (run.error ?? run.message ?? run.detail)}
+                  </small>
                 </span>
                 <span className="run-kind">{run.kind}</span>
                 <span className={`run-status ${run.status}`}>
@@ -623,11 +641,19 @@ export function ActivityView({
                 <strong>{selectedRun.progress}%</strong>
               </div>
 
-              {selectedRun.kind === "image" && selectedRun.outputUrl && (
-                <div className="run-output-preview">
-                  <img src={selectedRun.outputUrl} alt={selectedRun.name} />
+              {selectedRunRestricted && (
+                <div className="run-output-preview restricted-output">
+                  <span>Adult content hidden</span>
                 </div>
               )}
+
+              {!selectedRunRestricted &&
+                selectedRun.kind === "image" &&
+                selectedRun.outputUrl && (
+                  <div className="run-output-preview">
+                    <img src={selectedRun.outputUrl} alt={selectedRun.name} />
+                  </div>
+                )}
 
               {selectedRun.error && (
                 <div className="run-error" role="alert">
@@ -655,7 +681,7 @@ export function ActivityView({
                 </div>
               </dl>
 
-              {selectedRun.outputPath && (
+              {!selectedRunRestricted && selectedRun.outputPath && (
                 <section className="run-detail-section">
                   <span className="eyebrow">Output</span>
                   <code className="run-output-path">
@@ -664,7 +690,7 @@ export function ActivityView({
                 </section>
               )}
 
-              <RunRecipe run={selectedRun} />
+              {!selectedRunRestricted && <RunRecipe run={selectedRun} />}
 
               <section className="run-detail-section run-log-section">
                 <header>
@@ -732,7 +758,7 @@ export function ActivityView({
                     <Square size={14} /> Cancel
                   </button>
                 )}
-                {selectedRun.outputPath && (
+                {!selectedRunRestricted && selectedRun.outputPath && (
                   <button
                     className="secondary-button"
                     type="button"
@@ -748,16 +774,19 @@ export function ActivityView({
                       : "Show output"}
                   </button>
                 )}
-                {selectedRun.kind === "image" && selectedRun.outputUrl && (
-                  <button
-                    className="primary-button"
-                    type="button"
-                    onClick={() => onOpenImage(selectedRun)}
-                  >
-                    <Images size={14} /> Open in Studio
-                  </button>
-                )}
-                {selectedRun.recipe &&
+                {!selectedRunRestricted &&
+                  selectedRun.kind === "image" &&
+                  selectedRun.outputUrl && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => onOpenImage(selectedRun)}
+                    >
+                      <Images size={14} /> Open in Studio
+                    </button>
+                  )}
+                {!selectedRunRestricted &&
+                  selectedRun.recipe &&
                   selectedRun.status !== "queued" &&
                   selectedRun.status !== "running" && (
                     <button

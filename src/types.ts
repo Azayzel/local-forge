@@ -338,6 +338,7 @@ export interface ForgeApi {
   ollama: {
     health: (baseUrl: string) => Promise<RuntimeHealth>;
     models: (baseUrl: string) => Promise<OllamaModel[]>;
+    warmModel: (baseUrl: string, model: string) => Promise<void>;
     chat: (request: ChatRequest) => Promise<{ ok: boolean }>;
     cancelChat: (requestId: string) => Promise<void>;
     pull: (request: PullRequest) => Promise<{ ok: boolean }>;

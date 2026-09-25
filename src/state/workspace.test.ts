@@ -94,6 +94,53 @@ describe("workspace state", () => {
     );
   });
 
+  it("marks gallery assets linked to legacy adult runs as restricted", () => {
+    const persisted = createDefaultWorkspace();
+    const outputUrl = "local-forge-output://image/adult.png";
+    persisted.assets = [
+      {
+        id: "legacy-adult-output",
+        src: outputUrl,
+        title: "Legacy output",
+        source: "generated",
+        width: 1024,
+        height: 1024,
+        createdAt: "2026-09-25T00:00:00.000Z",
+        prompt: "Stored prompt",
+      },
+      ...persisted.assets,
+    ];
+    persisted.studio.activeAsset = outputUrl;
+    persisted.runs = [
+      {
+        id: "legacy-adult-run",
+        kind: "image",
+        name: "Legacy render",
+        status: "complete",
+        progress: 100,
+        startedAt: "2026-09-25T00:00:00.000Z",
+        outputUrl,
+        recipe: {
+          kind: "image",
+          modelId: "portrait-nsfw-xl",
+          modelName: "Portrait NSFW XL",
+          prompt: "Stored prompt",
+          negativePrompt: "",
+          width: 1024,
+          height: 1024,
+          steps: 24,
+          guidance: 5.5,
+          seed: 42,
+        },
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.assets[0].nsfw).toBe(true);
+    expect(workspace.studio.activeAsset).not.toBe(outputUrl);
+  });
+
   it("migrates version one workspaces and preserves MCP configuration", () => {
     const persisted = {
       ...createDefaultWorkspace(),

@@ -40,7 +40,7 @@ import type {
   VisionDescribeRequest,
   VisionDescribeResult,
 } from "../src/types";
-import { runMcpChat } from "./chat";
+import { runMcpChat, warmChatModel } from "./chat";
 import {
   discoverEnhancementModels,
   installEnhancementModel,
@@ -680,6 +680,10 @@ function registerIpc(): void {
   ipcMain.handle("ollama:health", (_event, baseUrl: string) => health(baseUrl));
   ipcMain.handle("ollama:models", (_event, baseUrl: string) =>
     listModels(baseUrl),
+  );
+  ipcMain.handle(
+    "ollama:warm-model",
+    (_event, baseUrl: string, model: string) => warmChatModel(baseUrl, model),
   );
   ipcMain.handle("ollama:chat", (event, request: ChatRequest) =>
     streamChat(event.sender, request),

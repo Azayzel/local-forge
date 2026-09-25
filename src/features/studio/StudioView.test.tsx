@@ -7,71 +7,19 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createDefaultAssets,
-  createDefaultStudioState,
-} from "../../state/workspace";
+import { createDefaultStudioState } from "../../state/workspace";
 import { NSFW_STUDIO_PROMPT } from "../../lib/nsfw";
 import { StudioView } from "./StudioView";
 
 afterEach(cleanup);
 
 describe("StudioView", () => {
-  it("loads thumbnails lazily and selects an asset from the image board", () => {
-    const assets = createDefaultAssets().slice(0, 2);
-    const onChange = vi.fn();
+  it("keeps reference imports without rendering thumbnail collections", async () => {
+    const onImportAssets = vi.fn(async () => 2);
     const { container } = render(
       <StudioView
         studio={createDefaultStudioState()}
         imageModels={[]}
-        assets={assets}
-        upscalerConfigured={false}
-        faceDetectorConfigured={false}
-        nsfwSegmenterConfigured={false}
-        nsfwConsent={false}
-        installingEnhancement={null}
-        enhancementInstallError=""
-        visionAvailable={false}
-        visionModel=""
-        onChange={onChange}
-        onGenerate={vi.fn()}
-        onCancel={vi.fn()}
-        onScanModels={vi.fn(async () => 0)}
-        onImportAssets={vi.fn(async () => 0)}
-        onRemoveModel={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onInstallEnhancement={vi.fn()}
-        onDescribeImage={vi.fn(async () => "")}
-      />,
-    );
-
-    const thumbnails = container.querySelectorAll(
-      ".studio-history-grid img, .variant-strip img",
-    );
-    expect(thumbnails).toHaveLength(assets.length * 2);
-    thumbnails.forEach((thumbnail) => {
-      expect(thumbnail).toHaveAttribute("loading", "lazy");
-      expect(thumbnail).toHaveAttribute("decoding", "async");
-      expect(thumbnail).toHaveAttribute("fetchpriority", "low");
-    });
-
-    fireEvent.click(screen.getByAltText(assets[1].title));
-    expect(onChange).toHaveBeenCalledWith({ activeAsset: assets[1].src });
-  });
-
-  it("virtualizes large image boards and variant strips", async () => {
-    const sample = createDefaultAssets()[0];
-    const assets = Array.from({ length: 100 }, (_, index) => ({
-      ...sample,
-      id: `asset-${index}`,
-      src: `./demo/asset-${index}.jpg`,
-      title: `Asset ${index}`,
-    }));
-    const { container } = render(
-      <StudioView
-        studio={createDefaultStudioState()}
-        imageModels={[]}
-        assets={assets}
         upscalerConfigured={false}
         faceDetectorConfigured={false}
         nsfwSegmenterConfigured={false}
@@ -84,7 +32,7 @@ describe("StudioView", () => {
         onGenerate={vi.fn()}
         onCancel={vi.fn()}
         onScanModels={vi.fn(async () => 0)}
-        onImportAssets={vi.fn(async () => 0)}
+        onImportAssets={onImportAssets}
         onRemoveModel={vi.fn()}
         onOpenSettings={vi.fn()}
         onInstallEnhancement={vi.fn()}
@@ -92,16 +40,20 @@ describe("StudioView", () => {
       />,
     );
 
-    await waitFor(() => {
-      const historyImages = container.querySelectorAll(
-        ".studio-history-grid img",
-      );
-      const variantImages = container.querySelectorAll(".variant-strip img");
-      expect(historyImages.length).toBeGreaterThan(0);
-      expect(historyImages.length).toBeLessThan(assets.length);
-      expect(variantImages.length).toBeGreaterThan(0);
-      expect(variantImages.length).toBeLessThan(assets.length);
-    });
+    expect(screen.queryByText("Image board")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Generate a variant" }),
+    ).toBeNull();
+    expect(container.querySelector(".studio-history-grid")).toBeNull();
+    expect(container.querySelector(".variant-strip")).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Import screenshots or reference images",
+      }),
+    );
+    await waitFor(() => expect(onImportAssets).toHaveBeenCalledOnce());
+    expect(await screen.findByText("Imported 2 images.")).toBeVisible();
   });
 
   it("reveals adult models and prompts only after both NSFW opt-ins", () => {
@@ -124,7 +76,6 @@ describe("StudioView", () => {
     const props = {
       studio,
       imageModels: [safeModel, adultModel],
-      assets: [],
       upscalerConfigured: false,
       faceDetectorConfigured: false,
       nsfwSegmenterConfigured: false,
@@ -187,7 +138,6 @@ describe("StudioView", () => {
       <StudioView
         studio={createDefaultStudioState()}
         imageModels={[]}
-        assets={[]}
         upscalerConfigured={false}
         faceDetectorConfigured={false}
         nsfwSegmenterConfigured={false}
@@ -241,7 +191,6 @@ describe("StudioView", () => {
     const props = {
       studio: createDefaultStudioState(),
       imageModels: [],
-      assets: [],
       upscalerConfigured: false,
       faceDetectorConfigured: false,
       nsfwSegmenterConfigured: false,

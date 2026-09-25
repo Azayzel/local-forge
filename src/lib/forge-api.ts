@@ -67,6 +67,7 @@ function createBrowserApi(): ForgeApi {
         version: "preview-runtime",
       }),
       models: async () => previewModels,
+      warmModel: async () => undefined,
       chat: async (request) => {
         const response =
           "This browser preview is using a simulated local runtime. Launch the Electron app to stream a response from your installed Ollama models.";

@@ -223,6 +223,38 @@ function App() {
     };
   }, [workspace.settings.ollamaUrl]);
 
+  const warmModelName =
+    models.find((model) => model.name === activeThread.model)?.name ||
+    models.find((model) => model.name === workspace.settings.selectedModel)
+      ?.name ||
+    models[0]?.name ||
+    "";
+
+  useEffect(() => {
+    if (
+      !loaded ||
+      !health.online ||
+      workspace.activeView !== "workbench" ||
+      !warmModelName
+    ) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void forgeApi.ollama
+        .warmModel(workspace.settings.ollamaUrl, warmModelName)
+        .catch((error: unknown) =>
+          console.warn("Could not preload the selected model:", error),
+        );
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [
+    health.online,
+    loaded,
+    warmModelName,
+    workspace.activeView,
+    workspace.settings.ollamaUrl,
+  ]);
+
   useEffect(() => {
     let active = true;
     async function pollSystem() {
@@ -312,6 +344,12 @@ function App() {
 
           const imageRecipe =
             existing.recipe?.kind === "image" ? existing.recipe : null;
+          const generatedNsfw =
+            imageRecipe?.nsfwDefaults === true ||
+            current.imageModels.some(
+              (model) =>
+                model.id === imageRecipe?.modelId && isNsfwImageModel(model),
+            );
           const generated: LibraryAsset = {
             id: `generated-${event.jobId}`,
             src: event.outputUrl,
@@ -322,7 +360,7 @@ function App() {
             createdAt: new Date().toISOString(),
             prompt: imageRecipe?.prompt ?? "",
             outputPath: event.outputPath,
-            nsfw: imageRecipe?.nsfwDefaults === true,
+            nsfw: generatedNsfw,
           };
           return {
             ...current,
@@ -604,27 +642,38 @@ function App() {
     const recipe = run.recipe;
     const outputUrl = run.outputUrl;
     if (recipe?.kind !== "image" || !outputUrl) return;
-    setWorkspace((current) => ({
-      ...current,
-      activeView: "studio",
-      studio: {
-        ...current.studio,
-        model: recipe.modelId,
-        prompt: recipe.prompt,
-        negativePrompt: recipe.negativePrompt,
-        width: recipe.width,
-        height: recipe.height,
-        steps: recipe.steps,
-        guidance: recipe.guidance,
-        seed: recipe.seed,
-        faceFix: recipe.faceFix ?? false,
-        faceFixStrength: recipe.faceFixStrength ?? 0.45,
-        upscale: recipe.upscale ?? false,
-        upscaleFactor: recipe.upscaleFactor ?? 2,
-        nsfwSegmentation: recipe.nsfwSegmentation ?? false,
-        activeAsset: outputUrl,
-      },
-    }));
+    setWorkspace((current) => {
+      const model = current.imageModels.find(
+        (candidate) => candidate.id === recipe.modelId,
+      );
+      const nsfwRun =
+        recipe.nsfwDefaults === true ||
+        Boolean(model && isNsfwImageModel(model));
+      if (nsfwRun && !current.settings.nsfwConsent) return current;
+      return {
+        ...current,
+        activeView: "studio",
+        studio: {
+          ...current.studio,
+          model: recipe.modelId,
+          prompt: recipe.prompt,
+          negativePrompt: recipe.negativePrompt,
+          width: recipe.width,
+          height: recipe.height,
+          steps: recipe.steps,
+          guidance: recipe.guidance,
+          seed: recipe.seed,
+          faceFix: recipe.faceFix ?? false,
+          faceFixStrength: recipe.faceFixStrength ?? 0.45,
+          upscale: recipe.upscale ?? false,
+          upscaleFactor: recipe.upscaleFactor ?? 2,
+          nsfwSegmentation:
+            current.settings.nsfwConsent && (recipe.nsfwSegmentation ?? false),
+          nsfwDefaults: nsfwRun,
+          activeAsset: outputUrl,
+        },
+      };
+    });
   }
 
   async function scanImageModels(): Promise<number> {
@@ -635,6 +684,11 @@ function App() {
         current.imageModels.map((model) => [model.path, model]),
       );
       for (const model of discovered) modelsByPath.set(model.path, model);
+      const allowNsfwModels =
+        current.settings.nsfwConsent && current.studio.nsfwDefaults;
+      const defaultModel = discovered.find(
+        (model) => allowNsfwModels || !isNsfwImageModel(model),
+      );
       return {
         ...current,
         imageModels: [...modelsByPath.values()].sort((left, right) =>
@@ -642,7 +696,7 @@ function App() {
         ),
         studio: {
           ...current.studio,
-          model: current.studio.model || discovered[0].id,
+          model: current.studio.model || defaultModel?.id || "",
         },
       };
     });
@@ -876,7 +930,6 @@ function App() {
             <StudioView
               studio={workspace.studio}
               imageModels={workspace.imageModels}
-              assets={visibleAssets}
               activeRun={activeImageRun}
               upscalerConfigured={Boolean(
                 workspace.settings.upscalerModelPath.trim(),
@@ -972,6 +1025,7 @@ function App() {
           {workspace.activeView === "activity" && (
             <ActivityView
               runs={workspace.runs}
+              nsfwConsent={workspace.settings.nsfwConsent}
               onCancel={(id) => void forgeApi.jobs.cancel(id)}
               onReveal={(outputPath) =>
                 void forgeApi.jobs.revealOutput(outputPath)

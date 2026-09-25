@@ -57,6 +57,8 @@ const api: ForgeApi = {
       ipcRenderer.invoke("ollama:health", baseUrl) as Promise<RuntimeHealth>,
     models: (baseUrl: string) =>
       ipcRenderer.invoke("ollama:models", baseUrl) as Promise<OllamaModel[]>,
+    warmModel: (baseUrl: string, model: string) =>
+      ipcRenderer.invoke("ollama:warm-model", baseUrl, model) as Promise<void>,
     chat: (request: ChatRequest) =>
       ipcRenderer.invoke("ollama:chat", request) as Promise<{ ok: boolean }>,
     cancelChat: (requestId: string) =>

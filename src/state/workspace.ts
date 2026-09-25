@@ -4,7 +4,7 @@ import type {
   ImageModel,
   McpServerConfig,
 } from "../types";
-import { isNsfwImageModel } from "../lib/nsfw";
+import { hasNsfwModelTag, isNsfwImageModel } from "../lib/nsfw";
 
 export type ThemeId =
   | "forge"
@@ -396,6 +396,21 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
         ),
       )
     : [];
+  const nsfwRunOutputs = new Set(
+    runs.flatMap((run) => {
+      const recipe = run.recipe;
+      if (
+        recipe?.kind !== "image" ||
+        (!recipe.nsfwDefaults &&
+          !hasNsfwModelTag(recipe.modelId, recipe.modelName))
+      ) {
+        return [];
+      }
+      return [run.outputUrl, run.outputPath].filter((value): value is string =>
+        Boolean(value),
+      );
+    }),
+  );
   const assets = Array.isArray(candidate.assets)
     ? candidate.assets
         .filter((asset): asset is LibraryAsset =>
@@ -409,6 +424,10 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
         .map((asset) => ({
           ...asset,
           src: normalizeBundledAssetUrl(asset.src),
+          nsfw:
+            asset.nsfw === true ||
+            nsfwRunOutputs.has(asset.src) ||
+            Boolean(asset.outputPath && nsfwRunOutputs.has(asset.outputPath)),
         }))
     : fallback.assets;
   const nsfwConsent = candidate.settings?.nsfwConsent === true;
