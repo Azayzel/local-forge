@@ -235,8 +235,6 @@ def refine_faces(
     prompt: str,
     negative_prompt: str,
     strength: float,
-    steps: int,
-    guidance: float,
     generator: Any,
 ):
     import torch
@@ -283,8 +281,8 @@ def refine_faces(
                     negative_prompt=negative_prompt or None,
                     image=resized,
                     strength=strength,
-                    num_inference_steps=max(20, steps),
-                    guidance_scale=max(5.0, guidance - 1.5),
+                    num_inference_steps=25,
+                    guidance_scale=6.0,
                     generator=generator,
                 ).images[0]
             refined = refined.resize(
@@ -501,8 +499,6 @@ def main() -> None:
                 prompt,
                 negative_prompt,
                 face_fix_strength,
-                steps,
-                guidance,
                 generator,
             )
             processing_suffixes.append("face")
