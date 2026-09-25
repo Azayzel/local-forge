@@ -194,6 +194,105 @@ describe("LocalJobManager", () => {
     await expect(fs.readFile(final, "utf8")).resolves.toBe("final");
   });
 
+  it("validates and forwards a selected image edit", async () => {
+    const root = await temporaryDirectory();
+    const modelPath = path.join(root, "image-model");
+    const sourceImage = path.join(root, "source.png");
+    await fs.mkdir(modelPath);
+    await fs.writeFile(path.join(modelPath, "model_index.json"), "{}");
+    await fs.writeFile(sourceImage, "fixture");
+    const events: JobEvent[] = [];
+    const manager = new LocalJobManager({
+      runtimeDirectory: () => root,
+      outputDirectory: () => path.join(root, "outputs"),
+      imageWorker: () => fixture,
+    });
+
+    await manager.startImage(
+      {
+        jobId: "image-edit-fixture",
+        pythonPath: process.execPath,
+        model: {
+          id: modelPath,
+          name: "fixture",
+          path: modelPath,
+          format: "diffusers",
+          architecture: "StableDiffusionXLPipeline",
+          modifiedAt: new Date().toISOString(),
+        },
+        prompt: "A portrait in a quiet studio",
+        negativePrompt: "blurred",
+        width: 512,
+        height: 512,
+        steps: 2,
+        guidance: 5,
+        seed: 42,
+        faceFix: false,
+        faceFixStrength: 0.45,
+        faceDetectorModelPath: "",
+        upscale: false,
+        upscaleFactor: 2,
+        upscalerModelPath: "",
+        nsfwSegmentation: false,
+        nsfwSegmenterModelPath: "",
+        sourceImage,
+        editRegion: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+        editPrompt: "Move the subject to the left",
+        editStrength: 0.7,
+      },
+      (event) => events.push(event),
+    );
+
+    await waitForDone(events);
+    const request = JSON.parse(
+      await fs.readFile(
+        path.join(root, "outputs", "images", "request.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(request).toMatchObject({
+      source_image: sourceImage,
+      edit_region: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+      edit_prompt: "Move the subject to the left",
+      edit_strength: 0.7,
+    });
+
+    await expect(
+      manager.startImage(
+        {
+          jobId: "invalid-image-edit",
+          pythonPath: process.execPath,
+          model: {
+            id: modelPath,
+            name: "fixture",
+            path: modelPath,
+            format: "diffusers",
+            architecture: "StableDiffusionXLPipeline",
+            modifiedAt: new Date().toISOString(),
+          },
+          prompt: "A portrait",
+          negativePrompt: "",
+          width: 512,
+          height: 512,
+          steps: 2,
+          guidance: 5,
+          seed: 42,
+          faceFix: false,
+          faceFixStrength: 0.45,
+          faceDetectorModelPath: "",
+          upscale: false,
+          upscaleFactor: 2,
+          upscalerModelPath: "",
+          nsfwSegmentation: false,
+          nsfwSegmenterModelPath: "",
+          sourceImage,
+          editRegion: { x: 0.8, y: 0.2, width: 0.3, height: 0.4 },
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("must stay inside");
+  });
+
   it("runs training only with a local Transformers model and dataset", async () => {
     const root = await temporaryDirectory();
     const modelPath = path.join(root, "language-model");

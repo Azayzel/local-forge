@@ -69,6 +69,7 @@ interface ModelsViewProps {
   models: OllamaModel[];
   baseUrl: string;
   selectedModel: string;
+  nsfwConsent: boolean;
   onSelect: (model: string) => void;
   onRefresh: () => void;
 }
@@ -78,6 +79,7 @@ export function ModelsView({
   models,
   baseUrl,
   selectedModel,
+  nsfwConsent,
   onSelect,
   onRefresh,
 }: ModelsViewProps) {
@@ -105,7 +107,7 @@ export function ModelsView({
     setCatalogLoading(true);
     setCatalogError("");
     try {
-      setCatalog(await forgeApi.catalog.list(refresh));
+      setCatalog(await forgeApi.catalog.list(refresh, nsfwConsent));
     } catch (error) {
       setCatalogError(
         error instanceof Error ? error.message : "Model discovery failed.",
@@ -116,7 +118,7 @@ export function ModelsView({
   });
   useEffect(() => {
     void loadCatalog(false);
-  }, []);
+  }, [nsfwConsent]);
 
   function install(model: string) {
     if (!model.trim() || !health.online) return;
@@ -131,6 +133,7 @@ export function ModelsView({
       : 0;
   const normalizedCatalogQuery = catalogQuery.trim().toLowerCase();
   const visibleCatalog = (catalog?.items ?? []).filter((model) => {
+    if (model.nsfw && !nsfwConsent) return false;
     if (catalogFilter !== "all" && model.category !== catalogFilter) {
       return false;
     }
@@ -144,6 +147,7 @@ export function ModelsView({
     return (
       !normalizedCatalogQuery ||
       model.name.toLowerCase().includes(normalizedCatalogQuery) ||
+      model.pipeline.toLowerCase().includes(normalizedCatalogQuery) ||
       model.architecture.toLowerCase().includes(normalizedCatalogQuery) ||
       model.tags.some((tag) =>
         tag.toLowerCase().includes(normalizedCatalogQuery),
@@ -288,9 +292,16 @@ export function ModelsView({
                   key={model.id}
                 >
                   <header>
-                    <span className={`catalog-source ${model.source}`}>
-                      {sourceLabel(model)}
-                    </span>
+                    <div className="catalog-source-group">
+                      <span className={`catalog-source ${model.source}`}>
+                        {sourceLabel(model)}
+                      </span>
+                      {model.nsfw && (
+                        <span className="catalog-adult" title="Adult content">
+                          18+
+                        </span>
+                      )}
+                    </div>
                     <span
                       className="catalog-verified"
                       title="Live source verified"

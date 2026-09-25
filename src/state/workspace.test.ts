@@ -227,6 +227,45 @@ describe("workspace state", () => {
     });
   });
 
+  it("preserves masked edit recipes for retries", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.runs = [
+      {
+        id: "image-edit-run",
+        kind: "image",
+        name: "Studio selected edit",
+        status: "complete",
+        progress: 100,
+        startedAt: "2026-09-24T10:00:00.000Z",
+        recipe: {
+          kind: "image",
+          modelId: "local-diffusers",
+          modelName: "Local Diffusers",
+          prompt: "Editorial portrait",
+          negativePrompt: "text, watermark",
+          width: 1024,
+          height: 768,
+          steps: 24,
+          guidance: 5.5,
+          seed: 42,
+          sourceImage: "local-forge-output://image/source.png",
+          editRegion: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+          editPrompt: "Move the subject to the left",
+          editStrength: 0.7,
+        },
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.runs[0].recipe).toMatchObject({
+      sourceImage: "local-forge-output://image/source.png",
+      editRegion: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+      editPrompt: "Move the subject to the left",
+      editStrength: 0.7,
+    });
+  });
+
   it("bounds persisted job logs and discards invalid entries", () => {
     const logs = Array.from({ length: 205 }, (_, index) => ({
       timestamp: `2026-09-24T10:00:${String(index).padStart(2, "0")}.000Z`,

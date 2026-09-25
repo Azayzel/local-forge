@@ -222,4 +222,117 @@ describe("StudioView", () => {
 
     expect(screen.queryByText("Description for old image")).toBeNull();
   });
+
+  it("submits a normalized selection for masked image editing", () => {
+    const studio = {
+      ...createDefaultStudioState(),
+      model: "edit-model",
+    };
+    const onGenerate = vi.fn();
+    const { container } = render(
+      <StudioView
+        studio={studio}
+        imageModels={[
+          {
+            id: "edit-model",
+            name: "Local Diffusers",
+            path: "D:/models/local-diffusers",
+            format: "diffusers",
+            architecture: "StableDiffusionPipeline",
+            modifiedAt: "2026-09-25T00:00:00.000Z",
+          },
+        ]}
+        upscalerConfigured={false}
+        faceDetectorConfigured={false}
+        nsfwSegmenterConfigured={false}
+        nsfwConsent={false}
+        installingEnhancement={null}
+        enhancementInstallError=""
+        visionAvailable={false}
+        visionModel=""
+        onChange={vi.fn()}
+        onGenerate={onGenerate}
+        onCancel={vi.fn()}
+        onScanModels={vi.fn(async () => 0)}
+        onImportAssets={vi.fn(async () => 0)}
+        onRemoveModel={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onInstallEnhancement={vi.fn()}
+        onDescribeImage={vi.fn(async () => "")}
+      />,
+    );
+
+    const artwork = container.querySelector(".active-artwork");
+    expect(artwork).toBeInstanceOf(HTMLElement);
+    vi.spyOn(artwork as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 50,
+      left: 100,
+      top: 50,
+      right: 500,
+      bottom: 250,
+      width: 400,
+      height: 200,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Select area to edit" }),
+    );
+    fireEvent(
+      artwork as HTMLElement,
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        clientX: 180,
+        clientY: 90,
+      }),
+    );
+    fireEvent(
+      artwork as HTMLElement,
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 420,
+        clientY: 190,
+      }),
+    );
+    fireEvent(
+      artwork as HTMLElement,
+      new MouseEvent("pointerup", {
+        bubbles: true,
+        clientX: 420,
+        clientY: 190,
+      }),
+    );
+
+    expect(screen.getByTestId("studio-edit-selection")).toHaveStyle({
+      left: "20%",
+      top: "20%",
+      width: "60%",
+      height: "50%",
+    });
+
+    fireEvent.change(screen.getByLabelText("Edit instruction"), {
+      target: { value: "Change the position to the left" },
+    });
+    fireEvent.change(screen.getByRole("slider", { name: "Edit strength" }), {
+      target: { value: "0.8" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply selected edit" }),
+    );
+
+    expect(onGenerate).toHaveBeenCalledWith("edit", {
+      sourceImage: studio.activeAsset,
+      region: {
+        x: expect.closeTo(0.2),
+        y: expect.closeTo(0.2),
+        width: expect.closeTo(0.6),
+        height: expect.closeTo(0.5),
+      },
+      instruction: "Change the position to the left",
+      strength: 0.8,
+      width: 1024,
+      height: 1024,
+    });
+  });
 });

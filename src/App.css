@@ -210,8 +210,7 @@
   flex: 0 0 var(--rail-width);
   flex-direction: column;
   align-items: center;
-  border-right: 1px solid var(--line);
-  background: var(--bg-elevated);
+  background: transparent;
 }
 
 .rail-glyph {
@@ -1688,17 +1687,23 @@
 .studio-view {
   display: grid;
   overflow: hidden;
+  padding: 22px 0 0 24px;
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.studio-view > .tool-header {
+  padding-right: 24px;
 }
 
 .studio-layout {
   display: grid;
   min-height: 0;
+  margin-left: -24px;
   grid-template-columns: 215px minmax(360px, 1fr) 285px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px 0 0;
   background: var(--panel);
-  box-shadow: 0 16px 42px rgb(0 0 0 / 22%);
+  box-shadow: -4px -3px 14px rgb(0 0 0 / 28%);
 }
 
 .studio-presets,
@@ -1902,6 +1907,25 @@
   text-transform: uppercase;
 }
 
+.canvas-toolbar .canvas-toolbar-actions,
+.canvas-tool-toggle,
+.canvas-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.canvas-tool-toggle {
+  margin-right: 4px;
+  padding-right: 7px;
+  border-right: 1px solid var(--line);
+}
+
+.canvas-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .studio-canvas {
   position: relative;
   display: grid;
@@ -1909,6 +1933,7 @@
   place-items: center;
   overflow: hidden;
   padding: 24px;
+  container-type: size;
 }
 
 .canvas-grid {
@@ -1929,25 +1954,51 @@
 }
 
 .active-artwork {
+  --artwork-ratio: 1;
+
   position: relative;
   z-index: 1;
   display: flex;
-  width: min(76%, 620px);
-  height: min(83%, 610px);
-  min-height: 260px;
+  width: min(
+    76cqw,
+    620px,
+    calc(83cqh * var(--artwork-ratio)),
+    calc(610px * var(--artwork-ratio))
+  );
+  height: auto;
+  aspect-ratio: var(--artwork-ratio);
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   margin: 0;
   border: 1px solid var(--line-strong);
   background: var(--bg);
   box-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+  touch-action: none;
   transition: transform 180ms ease;
+  user-select: none;
+  will-change: transform;
+}
+
+.active-artwork.canvas-pan {
+  cursor: grab;
+}
+
+.active-artwork.canvas-pan.is-dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.active-artwork.canvas-select {
+  cursor: crosshair;
 }
 
 .active-artwork img {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .active-artwork.is-denoising {
@@ -1976,6 +2027,7 @@
 
 .active-artwork figcaption {
   position: absolute;
+  z-index: 3;
   right: 8px;
   bottom: 8px;
   left: 8px;
@@ -1989,6 +2041,70 @@
   backdrop-filter: blur(8px);
   color: #e5e9e0;
   font-size: 8px;
+  pointer-events: none;
+}
+
+.studio-edit-selection {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid var(--ember);
+  background: rgb(220 125 71 / 12%);
+  box-shadow: 0 0 0 9999px rgb(5 7 6 / 48%);
+  pointer-events: none;
+}
+
+.studio-edit-selection span {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: rgb(9 11 9 / 82%);
+  color: var(--text);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.studio-edit-panel {
+  margin-bottom: 16px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.studio-edit-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.studio-edit-panel header strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.studio-edit-panel .compact-textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.studio-edit-strength {
+  margin-top: 10px;
+}
+
+.studio-edit-action {
+  width: 100%;
+  margin-top: 13px;
+  font-size: 9px;
+}
+
+.studio-edit-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .prompt-field,
@@ -2701,6 +2817,7 @@
 
 .catalog-source,
 .catalog-verified,
+.catalog-adult,
 .fit-badge {
   display: inline-flex;
   align-items: center;
@@ -2722,6 +2839,19 @@
 
 .catalog-verified {
   color: var(--mint);
+}
+
+.catalog-source-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.catalog-adult {
+  padding: 2px 4px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: 3px;
+  color: var(--danger);
 }
 
 .catalog-model-heading h3 {
@@ -4153,9 +4283,14 @@
     display: block;
     overflow-y: auto;
   }
+  .studio-view > .tool-header {
+    padding-right: 0;
+  }
   .studio-layout {
     display: flex;
+    margin-left: 0;
     flex-direction: column;
+    border-radius: 6px;
   }
   .studio-canvas-wrap {
     min-height: 500px;

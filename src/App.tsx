@@ -42,6 +42,7 @@ import type {
   AppView,
   EnhancementModelKind,
   ImageModel,
+  StudioImageEdit,
   JobEvent,
   OllamaModel,
   RuntimeHealth,
@@ -346,6 +347,10 @@ function App() {
             existing.recipe?.kind === "image" ? existing.recipe : null;
           const generatedNsfw =
             imageRecipe?.nsfwDefaults === true ||
+            current.assets.some(
+              (asset) =>
+                asset.src === imageRecipe?.sourceImage && asset.nsfw === true,
+            ) ||
             current.imageModels.some(
               (model) =>
                 model.id === imageRecipe?.modelId && isNsfwImageModel(model),
@@ -457,8 +462,12 @@ function App() {
     model: ImageModel,
     name: string,
   ) {
+    const sourceIsNsfw = workspace.assets.some(
+      (asset) => asset.src === recipe.sourceImage && asset.nsfw === true,
+    );
     const nsfwAllowed =
       workspace.settings.nsfwConsent && workspace.studio.nsfwDefaults;
+    if (sourceIsNsfw && !workspace.settings.nsfwConsent) return;
     if ((recipe.nsfwDefaults || isNsfwImageModel(model)) && !nsfwAllowed) {
       return;
     }
@@ -503,6 +512,10 @@ function App() {
         nsfwSegmentation:
           workspace.settings.nsfwConsent && Boolean(recipe.nsfwSegmentation),
         nsfwSegmenterModelPath: workspace.settings.nsfwSegmenterModelPath,
+        sourceImage: recipe.sourceImage,
+        editRegion: recipe.editRegion,
+        editPrompt: recipe.editPrompt,
+        editStrength: recipe.editStrength,
       });
     } catch (error) {
       failRun(jobId, error);
@@ -549,31 +562,40 @@ function App() {
     }
   }
 
-  async function startImage(action: "render" | "variant") {
+  async function startImage(
+    action: "render" | "variant" | "edit",
+    edit?: StudioImageEdit,
+  ) {
     const model = workspace.imageModels.find(
       (item) => item.id === workspace.studio.model,
     );
-    if (!model) return;
+    if (!model || (action === "edit" && !edit)) return;
+    const editInstruction = edit?.instruction.trim() ?? "";
+    const basePrompt = workspace.studio.prompt.trim();
+    const prompt = basePrompt || editInstruction;
+    if (!prompt) return;
     const seed =
-      action === "variant"
+      action === "variant" || action === "edit"
         ? Math.floor(Math.random() * 2 ** 32)
         : workspace.studio.seed;
     const recipe: ImageRunRecipe = {
       kind: "image",
       modelId: model.id,
       modelName: model.name,
-      prompt: workspace.studio.prompt,
+      prompt,
       negativePrompt: workspace.studio.negativePrompt,
-      width: workspace.studio.width,
-      height: workspace.studio.height,
+      width: edit?.width ?? workspace.studio.width,
+      height: edit?.height ?? workspace.studio.height,
       steps: workspace.studio.steps,
       guidance: workspace.studio.guidance,
       seed,
       faceFix:
+        action !== "edit" &&
         workspace.studio.faceFix &&
         Boolean(workspace.settings.faceDetectorModelPath.trim()),
       faceFixStrength: workspace.studio.faceFixStrength,
       upscale:
+        action !== "edit" &&
         workspace.studio.upscale &&
         Boolean(workspace.settings.upscalerModelPath.trim()),
       upscaleFactor: workspace.studio.upscaleFactor,
@@ -583,11 +605,19 @@ function App() {
         Boolean(workspace.settings.nsfwSegmenterModelPath.trim()),
       nsfwDefaults:
         workspace.settings.nsfwConsent && workspace.studio.nsfwDefaults,
+      sourceImage: edit?.sourceImage,
+      editRegion: edit?.region,
+      editPrompt: basePrompt ? editInstruction : "",
+      editStrength: edit?.strength,
     };
     await queueImageRun(
       recipe,
       model,
-      action === "variant" ? "Studio variant" : "Studio render",
+      action === "variant"
+        ? "Studio variant"
+        : action === "edit"
+          ? "Studio selected edit"
+          : "Studio render",
     );
   }
 
@@ -648,7 +678,12 @@ function App() {
       );
       const nsfwRun =
         recipe.nsfwDefaults === true ||
-        Boolean(model && isNsfwImageModel(model));
+        Boolean(model && isNsfwImageModel(model)) ||
+        current.assets.some(
+          (asset) =>
+            asset.nsfw === true &&
+            (asset.src === outputUrl || asset.src === recipe.sourceImage),
+        );
       if (nsfwRun && !current.settings.nsfwConsent) return current;
       return {
         ...current,
@@ -962,7 +997,7 @@ function App() {
                   studio: { ...current.studio, ...patch },
                 }))
               }
-              onGenerate={(action) => void startImage(action)}
+              onGenerate={(action, edit) => void startImage(action, edit)}
               onCancel={(jobId) => void forgeApi.jobs.cancel(jobId)}
               onScanModels={scanImageModels}
               onImportAssets={importStudioAssets}
@@ -1004,6 +1039,7 @@ function App() {
               models={models}
               baseUrl={workspace.settings.ollamaUrl}
               selectedModel={selectedModelName}
+              nsfwConsent={workspace.settings.nsfwConsent}
               onSelect={selectModel}
               onRefresh={() => void checkRuntime()}
             />

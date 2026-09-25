@@ -7,8 +7,11 @@ import torch
 from PIL import Image
 
 from runtime.image_worker import (
+    edit_generation_prompt,
+    edit_selection_mask,
     expanded_face_box,
     feathered_mask,
+    parse_edit_region,
     require_model_file,
     require_segmenter_directory,
     segment_nsfw,
@@ -73,6 +76,29 @@ class ImageWorkerTests(unittest.TestCase):
 
         self.assertEqual(mask.getpixel((50, 50)), 255)
         self.assertLess(mask.getpixel((0, 0)), mask.getpixel((20, 20)))
+
+    def test_edit_selection_mask_never_changes_pixels_outside_selection(self):
+        mask = edit_selection_mask((100, 80), (0.2, 0.25, 0.5, 0.5), feather=12)
+
+        self.assertEqual(mask.getpixel((19, 40)), 0)
+        self.assertEqual(mask.getpixel((70, 40)), 0)
+        self.assertEqual(mask.getpixel((50, 10)), 0)
+        self.assertGreater(mask.getpixel((50, 40)), 240)
+        self.assertLess(mask.getpixel((20, 40)), mask.getpixel((50, 40)))
+
+    def test_edit_region_and_instruction_are_normalized(self):
+        self.assertEqual(
+            parse_edit_region({"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}),
+            (0.1, 0.2, 0.3, 0.4),
+        )
+        with self.assertRaisesRegex(ValueError, "stay inside"):
+            parse_edit_region({"x": 0.9, "y": 0.2, "width": 0.2, "height": 0.4})
+        self.assertEqual(
+            edit_generation_prompt(
+                "Editorial portrait.", "change the position to the left"
+            ),
+            "Editorial portrait, change the position to the left",
+        )
 
     def test_require_model_file_checks_path_and_extension(self):
         with tempfile.TemporaryDirectory() as directory:

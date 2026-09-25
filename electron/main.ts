@@ -82,8 +82,10 @@ const MODEL_SCAN_IGNORES = new Set([
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceWrite = Promise.resolve();
-let modelCatalogCache: ModelCatalogResponse | null = null;
-let modelCatalogExpiresAt = 0;
+const modelCatalogCache = new Map<
+  boolean,
+  { value: ModelCatalogResponse; expiresAt: number }
+>();
 const jobs = new LocalJobManager({
   runtimeDirectory: () =>
     app.isPackaged
@@ -196,16 +198,12 @@ function enhancementModelRoots(): string[] {
   ].filter((root, index, roots) => roots.indexOf(root) === index);
 }
 
-async function imageForOllama(value: string): Promise<string> {
+async function localImageFilePath(value: string): Promise<string> {
   if (value.startsWith(`${ATTACHMENT_SCHEME}:`)) {
-    return (await fs.readFile(attachmentFilePath(value))).toString("base64");
+    return attachmentFilePath(value);
   }
   if (value.startsWith(`${OUTPUT_SCHEME}:`)) {
-    return (await fs.readFile(outputImageFilePath(value))).toString("base64");
-  }
-  if (value.startsWith("data:")) {
-    const separator = value.indexOf(",");
-    return separator >= 0 ? value.slice(separator + 1) : value;
+    return outputImageFilePath(value);
   }
   if (/^\.?\/demo\/[A-Za-z0-9_-]+\.(?:png|jpe?g|webp)$/i.test(value)) {
     const relative = value.replace(/^\.?\//, "");
@@ -215,7 +213,7 @@ async function imageForOllama(value: string): Promise<string> {
     ];
     for (const candidate of candidates) {
       try {
-        return (await fs.readFile(candidate)).toString("base64");
+        if ((await fs.stat(candidate)).isFile()) return candidate;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -223,6 +221,16 @@ async function imageForOllama(value: string): Promise<string> {
     throw new Error(`Bundled reference image was not found: ${value}`);
   }
   throw new Error("Unsupported Local Forge image URL.");
+}
+
+async function imageForOllama(value: string): Promise<string> {
+  if (value.startsWith("data:")) {
+    const separator = value.indexOf(",");
+    return separator >= 0 ? value.slice(separator + 1) : value;
+  }
+  return (await fs.readFile(await localImageFilePath(value))).toString(
+    "base64",
+  );
 }
 
 async function describeDiffusersModel(
@@ -591,13 +599,21 @@ async function getSystemSnapshot(): Promise<SystemSnapshot> {
   }
 }
 
-async function getModelCatalog(refresh = false): Promise<ModelCatalogResponse> {
-  if (!refresh && modelCatalogCache && modelCatalogExpiresAt > Date.now()) {
-    return modelCatalogCache;
+async function getModelCatalog(
+  refresh = false,
+  includeNsfw = false,
+): Promise<ModelCatalogResponse> {
+  const cached = modelCatalogCache.get(includeNsfw);
+  if (!refresh && cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
-  const catalog = await discoverModelCatalog(await getSystemSnapshot());
-  modelCatalogCache = catalog;
-  modelCatalogExpiresAt = Date.now() + MODEL_CATALOG_TTL_MS;
+  const catalog = await discoverModelCatalog(await getSystemSnapshot(), fetch, {
+    includeNsfw,
+  });
+  modelCatalogCache.set(includeNsfw, {
+    value: catalog,
+    expiresAt: Date.now() + MODEL_CATALOG_TTL_MS,
+  });
   return catalog;
 }
 
@@ -711,8 +727,10 @@ function registerIpc(): void {
     activePulls.get(requestId)?.abort();
   });
 
-  ipcMain.handle("catalog:list", (_event, refresh: boolean) =>
-    getModelCatalog(Boolean(refresh)),
+  ipcMain.handle(
+    "catalog:list",
+    (_event, refresh: boolean, includeNsfw: boolean) =>
+      getModelCatalog(Boolean(refresh), Boolean(includeNsfw)),
   );
   ipcMain.handle("catalog:open", (_event, url: string) =>
     shell.openExternal(modelCatalogUrl(url)),
@@ -743,7 +761,13 @@ function registerIpc(): void {
   ipcMain.handle(
     "jobs:start-image",
     async (event, request: ImageGenerationRequest) => {
-      await jobs.startImage(request, (jobEvent) =>
+      const resolvedRequest = request.sourceImage
+        ? {
+            ...request,
+            sourceImage: await localImageFilePath(request.sourceImage),
+          }
+        : request;
+      await jobs.startImage(resolvedRequest, (jobEvent) =>
         emitJob(event.sender, jobEvent),
       );
       return { ok: true };

@@ -80,10 +80,11 @@ const api: ForgeApi = {
       ) as Promise<VisionDescribeResult>,
   },
   catalog: {
-    list: (refresh = false) =>
+    list: (refresh = false, includeNsfw = false) =>
       ipcRenderer.invoke(
         "catalog:list",
         refresh,
+        includeNsfw,
       ) as Promise<ModelCatalogResponse>,
     open: (url: string) => ipcRenderer.invoke("catalog:open", url),
   },

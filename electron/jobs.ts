@@ -161,6 +161,33 @@ export class LocalJobManager {
         ),
       );
     }
+    if (Boolean(request.sourceImage) !== Boolean(request.editRegion)) {
+      throw new Error(
+        "Image edits require both a source image and a selection.",
+      );
+    }
+    if (request.sourceImage && request.editRegion) {
+      await assertModelFile(request.sourceImage, "Source image", [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+      ]);
+      const { x, y, width, height } = request.editRegion;
+      assertNumber(x, "Selection x", 0, 1);
+      assertNumber(y, "Selection y", 0, 1);
+      assertNumber(width, "Selection width", 0.01, 1);
+      assertNumber(height, "Selection height", 0.01, 1);
+      if (x + width > 1 || y + height > 1) {
+        throw new Error(
+          "The image edit selection must stay inside the source image.",
+        );
+      }
+      if ((request.editPrompt?.length ?? 0) > 2_000) {
+        throw new Error("The image edit instruction is too long.");
+      }
+      assertNumber(request.editStrength ?? 0.65, "Edit strength", 0.1, 1);
+    }
 
     const outputDirectory = path.join(this.paths.outputDirectory(), "images");
     await fs.mkdir(outputDirectory, { recursive: true });
@@ -197,6 +224,14 @@ export class LocalJobManager {
         upscaler_model: request.upscalerModelPath,
         nsfw_segmentation: request.nsfwSegmentation,
         nsfw_segmenter_model_dir: request.nsfwSegmenterModelPath,
+        ...(request.sourceImage && request.editRegion
+          ? {
+              source_image: request.sourceImage,
+              edit_region: request.editRegion,
+              edit_prompt: request.editPrompt?.trim() ?? "",
+              edit_strength: request.editStrength ?? 0.65,
+            }
+          : {}),
       },
       outputDirectory,
       emit,

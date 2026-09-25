@@ -1,6 +1,7 @@
 import type {
   AppView,
   ChatMessage,
+  ImageEditRegion,
   ImageModel,
   McpServerConfig,
 } from "../types";
@@ -64,6 +65,10 @@ export interface ImageRunRecipe {
   upscaleFactor?: 2 | 4;
   nsfwSegmentation?: boolean;
   nsfwDefaults?: boolean;
+  sourceImage?: string;
+  editRegion?: ImageEditRegion;
+  editPrompt?: string;
+  editStrength?: number;
 }
 
 export interface TuneRunRecipe {

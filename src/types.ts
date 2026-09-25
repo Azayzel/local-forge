@@ -247,6 +247,7 @@ export interface ModelCatalogItem {
   likes?: number;
   updatedAt?: string;
   gated: boolean;
+  nsfw: boolean;
   verified: boolean;
   compatibility: ModelCompatibility;
   compatibilityLabel: string;
@@ -259,6 +260,22 @@ export interface ModelCatalogResponse {
   fetchedAt: string;
   system: SystemSnapshot;
   warnings: string[];
+}
+
+export interface ImageEditRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface StudioImageEdit {
+  sourceImage: string;
+  region: ImageEditRegion;
+  instruction: string;
+  strength: number;
+  width: number;
+  height: number;
 }
 
 export interface ImageGenerationRequest {
@@ -280,6 +297,10 @@ export interface ImageGenerationRequest {
   upscalerModelPath: string;
   nsfwSegmentation: boolean;
   nsfwSegmenterModelPath: string;
+  sourceImage?: string;
+  editRegion?: ImageEditRegion;
+  editPrompt?: string;
+  editStrength?: number;
 }
 
 export interface TrainingRequest {
@@ -350,7 +371,10 @@ export interface ForgeApi {
     describe: (request: VisionDescribeRequest) => Promise<VisionDescribeResult>;
   };
   catalog: {
-    list: (refresh?: boolean) => Promise<ModelCatalogResponse>;
+    list: (
+      refresh?: boolean,
+      includeNsfw?: boolean,
+    ) => Promise<ModelCatalogResponse>;
     open: (url: string) => Promise<void>;
   };
   enhancements: {
