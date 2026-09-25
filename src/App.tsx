@@ -28,8 +28,10 @@ import { StudioView } from "./features/studio/StudioView";
 import { Workbench } from "./features/workbench/Workbench";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { forgeApi } from "./lib/forge-api";
-import { appendRunLog } from "./state/workspace";
+import { isNsfwImageModel } from "./lib/nsfw";
+import { appendRunLog, createDefaultStudioState } from "./state/workspace";
 import type {
+  ForgeSettings,
   ForgeRun,
   ForgeRunLog,
   ImageRunRecipe,
@@ -320,6 +322,7 @@ function App() {
             createdAt: new Date().toISOString(),
             prompt: imageRecipe?.prompt ?? "",
             outputPath: event.outputPath,
+            nsfw: imageRecipe?.nsfwDefaults === true,
           };
           return {
             ...current,
@@ -327,7 +330,10 @@ function App() {
             assets: current.assets.some((asset) => asset.id === generated.id)
               ? current.assets
               : [generated, ...current.assets],
-            studio: { ...current.studio, activeAsset: generated.src },
+            studio:
+              generated.nsfw && !current.settings.nsfwConsent
+                ? current.studio
+                : { ...current.studio, activeAsset: generated.src },
           };
         });
       }),
@@ -346,6 +352,37 @@ function App() {
         thread.id === current.activeThreadId ? { ...thread, model } : thread,
       ),
     }));
+  }
+
+  function updateSettings(patch: Partial<ForgeSettings>) {
+    setWorkspace((current) => {
+      const settings = { ...current.settings, ...patch };
+      if (settings.nsfwConsent) return { ...current, settings };
+
+      const defaults = createDefaultStudioState();
+      const selectedStudioModel = current.imageModels.find(
+        (model) => model.id === current.studio.model,
+      );
+      return {
+        ...current,
+        settings,
+        studio: {
+          ...current.studio,
+          model:
+            selectedStudioModel && isNsfwImageModel(selectedStudioModel)
+              ? ""
+              : current.studio.model,
+          prompt: current.studio.nsfwDefaults
+            ? defaults.prompt
+            : current.studio.prompt,
+          negativePrompt: current.studio.nsfwDefaults
+            ? defaults.negativePrompt
+            : current.studio.negativePrompt,
+          nsfwDefaults: false,
+          nsfwSegmentation: false,
+        },
+      };
+    });
   }
 
   function addRun(run: ForgeRun) {
@@ -382,6 +419,11 @@ function App() {
     model: ImageModel,
     name: string,
   ) {
+    const nsfwAllowed =
+      workspace.settings.nsfwConsent && workspace.studio.nsfwDefaults;
+    if ((recipe.nsfwDefaults || isNsfwImageModel(model)) && !nsfwAllowed) {
+      return;
+    }
     setImagePreview(null);
     const jobId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
@@ -420,7 +462,8 @@ function App() {
         upscale: Boolean(recipe.upscale),
         upscaleFactor: recipe.upscaleFactor ?? 2,
         upscalerModelPath: workspace.settings.upscalerModelPath,
-        nsfwSegmentation: Boolean(recipe.nsfwSegmentation),
+        nsfwSegmentation:
+          workspace.settings.nsfwConsent && Boolean(recipe.nsfwSegmentation),
         nsfwSegmenterModelPath: workspace.settings.nsfwSegmenterModelPath,
       });
     } catch (error) {
@@ -498,7 +541,10 @@ function App() {
       upscaleFactor: workspace.studio.upscaleFactor,
       nsfwSegmentation:
         workspace.studio.nsfwSegmentation &&
+        workspace.settings.nsfwConsent &&
         Boolean(workspace.settings.nsfwSegmenterModelPath.trim()),
+      nsfwDefaults:
+        workspace.settings.nsfwConsent && workspace.studio.nsfwDefaults,
     };
     await queueImageRun(
       recipe,
@@ -708,6 +754,9 @@ function App() {
     "";
   const selectedModel =
     models.find((model) => model.name === selectedModelName) ?? null;
+  const visibleAssets = workspace.settings.nsfwConsent
+    ? workspace.assets
+    : workspace.assets.filter((asset) => !asset.nsfw);
   const activeImageRun = workspace.runs.find(
     (run) =>
       run.kind === "image" &&
@@ -827,7 +876,7 @@ function App() {
             <StudioView
               studio={workspace.studio}
               imageModels={workspace.imageModels}
-              assets={workspace.assets}
+              assets={visibleAssets}
               activeRun={activeImageRun}
               upscalerConfigured={Boolean(
                 workspace.settings.upscalerModelPath.trim(),
@@ -838,6 +887,7 @@ function App() {
               nsfwSegmenterConfigured={Boolean(
                 workspace.settings.nsfwSegmenterModelPath.trim(),
               )}
+              nsfwConsent={workspace.settings.nsfwConsent}
               installingEnhancement={installingEnhancement}
               enhancementInstallError={enhancementInstallError}
               visionAvailable={health.online && Boolean(selectedModelName)}
@@ -879,7 +929,7 @@ function App() {
           )}
           {workspace.activeView === "library" && (
             <LibraryView
-              assets={workspace.assets}
+              assets={visibleAssets}
               onImport={importStudioAssets}
               onOpenInStudio={(asset) =>
                 setWorkspace((current) => ({
@@ -942,12 +992,7 @@ function App() {
               health={health}
               system={system}
               models={models}
-              onChange={(patch) =>
-                setWorkspace((current) => ({
-                  ...current,
-                  settings: { ...current.settings, ...patch },
-                }))
-              }
+              onChange={updateSettings}
               onCheckRuntime={() => void checkRuntime()}
             />
           )}

@@ -13,7 +13,20 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type MouseEventHandler,
+} from "react";
+import {
+  isNsfwImageModel,
+  NSFW_STUDIO_NEGATIVE_PROMPT,
+  NSFW_STUDIO_PROMPT,
+} from "../../lib/nsfw";
 import {
   createDefaultStudioState,
   type ForgeRun,
@@ -33,6 +46,8 @@ const stylePresets = [
   { name: "Documentary", description: "Observed / natural" },
 ];
 
+const VIRTUALIZE_ASSETS_AFTER = 24;
+
 interface StudioViewProps {
   studio: StudioState;
   imageModels: ImageModel[];
@@ -41,6 +56,7 @@ interface StudioViewProps {
   upscalerConfigured: boolean;
   faceDetectorConfigured: boolean;
   nsfwSegmenterConfigured: boolean;
+  nsfwConsent: boolean;
   installingEnhancement: EnhancementModelKind | null;
   enhancementInstallError: string;
   visionAvailable: boolean;
@@ -64,6 +80,182 @@ interface StudioViewProps {
   ) => Promise<string>;
 }
 
+interface StudioAssetThumbnailsProps {
+  assets: LibraryAsset[];
+  activeAsset: string;
+  variant: "history" | "variant";
+  startIndex?: number;
+}
+
+const StudioAssetThumbnails = memo(function StudioAssetThumbnails({
+  assets,
+  activeAsset,
+  variant,
+  startIndex = 0,
+}: StudioAssetThumbnailsProps) {
+  return assets.map((asset, index) => (
+    <button
+      className={activeAsset === asset.src ? "active" : ""}
+      data-asset-src={asset.src}
+      key={asset.src}
+      type="button"
+    >
+      <img
+        src={asset.src}
+        alt={variant === "history" ? asset.title : ""}
+        loading="lazy"
+        decoding="async"
+        fetchPriority="low"
+      />
+      {variant === "variant" && <span>V{startIndex + index + 1}</span>}
+    </button>
+  ));
+});
+
+interface StudioAssetCollectionProps {
+  assets: LibraryAsset[];
+  activeAsset: string;
+  onSelect: MouseEventHandler<HTMLDivElement>;
+}
+
+function StudioHistoryGrid({
+  assets,
+  activeAsset,
+  onSelect,
+}: StudioAssetCollectionProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const shouldVirtualize = assets.length > VIRTUALIZE_ASSETS_AFTER;
+  const rowVirtualizer = useVirtualizer({
+    count: shouldVirtualize ? Math.ceil(assets.length / 2) : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 98,
+    getItemKey: (rowIndex) => assets[rowIndex * 2]?.id ?? rowIndex,
+    overscan: 2,
+    initialRect: { width: 190, height: 320 },
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const visibleRows =
+    virtualRows.length > 0
+      ? virtualRows
+      : [{ index: 0, key: "initial", start: 0 }];
+
+  return (
+    <div
+      ref={scrollRef}
+      className={`studio-history-grid ${shouldVirtualize ? "is-virtualized" : ""}`}
+      onClick={onSelect}
+    >
+      {shouldVirtualize ? (
+        <div
+          className="studio-history-virtualizer"
+          style={{ height: rowVirtualizer.getTotalSize() }}
+        >
+          {visibleRows.map((virtualRow) => {
+            const rowStart = virtualRow.index * 2;
+            return (
+              <div
+                className="studio-history-row"
+                data-index={virtualRow.index}
+                key={virtualRow.key}
+                ref={rowVirtualizer.measureElement}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                <StudioAssetThumbnails
+                  assets={assets.slice(rowStart, rowStart + 2)}
+                  activeAsset={activeAsset}
+                  variant="history"
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <StudioAssetThumbnails
+          assets={assets}
+          activeAsset={activeAsset}
+          variant="history"
+        />
+      )}
+    </div>
+  );
+}
+
+interface StudioVariantStripProps extends StudioAssetCollectionProps {
+  canGenerateVariant: boolean;
+  onGenerateVariant: () => void;
+}
+
+function StudioVariantStrip({
+  assets,
+  activeAsset,
+  canGenerateVariant,
+  onGenerateVariant,
+  onSelect,
+}: StudioVariantStripProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const shouldVirtualize = assets.length > VIRTUALIZE_ASSETS_AFTER;
+  const itemVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: shouldVirtualize ? assets.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 57,
+    getItemKey: (index) => assets[index]?.id ?? index,
+    overscan: 4,
+    initialRect: { width: 600, height: 52 },
+  });
+  const virtualItems = itemVirtualizer.getVirtualItems();
+  const visibleItems =
+    virtualItems.length > 0
+      ? virtualItems
+      : [{ index: 0, key: "initial", start: 0 }];
+
+  return (
+    <div
+      ref={scrollRef}
+      className={`variant-strip ${shouldVirtualize ? "is-virtualized" : ""}`}
+      onClick={onSelect}
+    >
+      {shouldVirtualize ? (
+        <div
+          className="variant-virtualizer"
+          style={{ width: itemVirtualizer.getTotalSize() }}
+        >
+          {visibleItems.map((virtualItem) => (
+            <div
+              className="variant-virtual-item"
+              key={virtualItem.key}
+              style={{ transform: `translateX(${virtualItem.start}px)` }}
+            >
+              <StudioAssetThumbnails
+                assets={[assets[virtualItem.index]]}
+                activeAsset={activeAsset}
+                variant="variant"
+                startIndex={virtualItem.index}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <StudioAssetThumbnails
+          assets={assets}
+          activeAsset={activeAsset}
+          variant="variant"
+        />
+      )}
+      <button
+        className="variant-add"
+        type="button"
+        title="Generate a variant"
+        aria-label="Generate a variant"
+        disabled={!canGenerateVariant}
+        onClick={onGenerateVariant}
+      >
+        <Sparkles size={17} />
+      </button>
+    </div>
+  );
+}
+
 export function StudioView({
   studio,
   imageModels,
@@ -72,6 +264,7 @@ export function StudioView({
   upscalerConfigured,
   faceDetectorConfigured,
   nsfwSegmenterConfigured,
+  nsfwConsent,
   installingEnhancement,
   enhancementInstallError,
   visionAvailable,
@@ -95,7 +288,13 @@ export function StudioView({
   const visionRequestId = useRef(0);
   const activeAsset = useRef(studio.activeAsset);
   activeAsset.current = studio.activeAsset;
-  const selectedModel = imageModels.find((model) => model.id === studio.model);
+  const visibleImageModels =
+    nsfwConsent && studio.nsfwDefaults
+      ? imageModels
+      : imageModels.filter((model) => !isNsfwImageModel(model));
+  const selectedModel = visibleImageModels.find(
+    (model) => model.id === studio.model,
+  );
   const artworkSource = preview?.src ?? studio.activeAsset;
   const previewLabel =
     preview?.step && preview.total
@@ -176,6 +375,41 @@ export function StudioView({
     setZoom(67);
   }
 
+  function toggleNsfwDefaults(enabled: boolean) {
+    const defaults = createDefaultStudioState();
+    const currentModel = imageModels.find((model) => model.id === studio.model);
+    if (enabled) {
+      const adultModel = imageModels.find(isNsfwImageModel);
+      onChange({
+        nsfwDefaults: true,
+        model: adultModel?.id ?? studio.model,
+        prompt: NSFW_STUDIO_PROMPT,
+        negativePrompt: NSFW_STUDIO_NEGATIVE_PROMPT,
+      });
+      return;
+    }
+
+    const safeModel = imageModels.find((model) => !isNsfwImageModel(model));
+    onChange({
+      nsfwDefaults: false,
+      nsfwSegmentation: false,
+      model:
+        currentModel && isNsfwImageModel(currentModel)
+          ? (safeModel?.id ?? "")
+          : studio.model,
+      prompt: defaults.prompt,
+      negativePrompt: defaults.negativePrompt,
+    });
+  }
+
+  function selectAsset(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    const button = target.closest<HTMLButtonElement>("button[data-asset-src]");
+    if (!button || !event.currentTarget.contains(button)) return;
+    const source = button.dataset.assetSrc;
+    if (source) onChange({ activeAsset: source });
+  }
+
   return (
     <main className="tool-view studio-view">
       <header className="tool-header">
@@ -226,18 +460,11 @@ export function StudioView({
             <span>Image board</span>
             <span>{assets.length}</span>
           </div>
-          <div className="studio-history-grid">
-            {assets.map((asset) => (
-              <button
-                className={studio.activeAsset === asset.src ? "active" : ""}
-                key={asset.src}
-                type="button"
-                onClick={() => onChange({ activeAsset: asset.src })}
-              >
-                <img src={asset.src} alt={asset.title} />
-              </button>
-            ))}
-          </div>
+          <StudioHistoryGrid
+            assets={assets}
+            activeAsset={studio.activeAsset}
+            onSelect={selectAsset}
+          />
         </aside>
 
         <section className="studio-canvas-wrap">
@@ -301,33 +528,17 @@ export function StudioView({
               </figcaption>
             </figure>
           </div>
-          <div className="variant-strip">
-            {assets.map((asset, index) => (
-              <button
-                className={studio.activeAsset === asset.src ? "active" : ""}
-                type="button"
-                key={asset.src}
-                onClick={() => onChange({ activeAsset: asset.src })}
-              >
-                <img src={asset.src} alt="" />
-                <span>V{index + 1}</span>
-              </button>
-            ))}
-            <button
-              className="variant-add"
-              type="button"
-              title="Generate a variant"
-              aria-label="Generate a variant"
-              disabled={
-                Boolean(activeRun) ||
-                selectedModel?.format !== "diffusers" ||
-                !studio.prompt.trim()
-              }
-              onClick={() => onGenerate("variant")}
-            >
-              <Sparkles size={17} />
-            </button>
-          </div>
+          <StudioVariantStrip
+            assets={assets}
+            activeAsset={studio.activeAsset}
+            canGenerateVariant={
+              !activeRun &&
+              selectedModel?.format === "diffusers" &&
+              Boolean(studio.prompt.trim())
+            }
+            onGenerateVariant={() => onGenerate("variant")}
+            onSelect={selectAsset}
+          />
         </section>
 
         <aside className="studio-inspector">
@@ -348,6 +559,19 @@ export function StudioView({
           </div>
 
           <div className="studio-model-field">
+            {nsfwConsent && (
+              <label className="toggle-row studio-nsfw-defaults">
+                <span>
+                  <strong>Enable NSFW defaults</strong>
+                  <small>Show adult-tagged models and use adult prompts</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={studio.nsfwDefaults}
+                  onChange={(event) => toggleNsfwDefaults(event.target.checked)}
+                />
+              </label>
+            )}
             <label className="field-label" htmlFor="studio-model">
               Image model
             </label>
@@ -358,9 +582,10 @@ export function StudioView({
                 onChange={(event) => onChange({ model: event.target.value })}
               >
                 <option value="">No model selected</option>
-                {imageModels.map((model) => (
+                {visibleImageModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
+                    {isNsfwImageModel(model) ? " (NSFW)" : ""}
                   </option>
                 ))}
               </select>
@@ -560,7 +785,7 @@ export function StudioView({
               <span>Enhance</span>
               {(!faceDetectorConfigured ||
                 !upscalerConfigured ||
-                !nsfwSegmenterConfigured) && (
+                (nsfwConsent && !nsfwSegmenterConfigured)) && (
                 <button type="button" onClick={onOpenSettings}>
                   Configure
                 </button>
@@ -672,38 +897,40 @@ export function StudioView({
                 </div>
               </div>
             )}
-            <div className="toggle-row">
-              <span>
-                <strong>NSFW Segmentation</strong>
-                <small>
-                  {nsfwSegmenterConfigured
-                    ? "Save detected-region masks"
-                    : "Segmentation models required"}
-                </small>
-              </span>
-              {nsfwSegmenterConfigured ? (
-                <input
-                  type="checkbox"
-                  aria-label="NSFW Segmentation"
-                  checked={studio.nsfwSegmentation}
-                  onChange={(event) =>
-                    onChange({ nsfwSegmentation: event.target.checked })
-                  }
-                />
-              ) : (
-                <button
-                  className="studio-model-install"
-                  type="button"
-                  disabled={installingEnhancement !== null}
-                  onClick={() => onInstallEnhancement("nsfwSegmenter")}
-                >
-                  <Download size={12} />
-                  {installingEnhancement === "nsfwSegmenter"
-                    ? "Installing..."
-                    : "Install"}
-                </button>
-              )}
-            </div>
+            {nsfwConsent && (
+              <div className="toggle-row">
+                <span>
+                  <strong>NSFW Segmentation</strong>
+                  <small>
+                    {nsfwSegmenterConfigured
+                      ? "Save detected-region masks"
+                      : "Segmentation models required"}
+                  </small>
+                </span>
+                {nsfwSegmenterConfigured ? (
+                  <input
+                    type="checkbox"
+                    aria-label="NSFW Segmentation"
+                    checked={studio.nsfwSegmentation}
+                    onChange={(event) =>
+                      onChange({ nsfwSegmentation: event.target.checked })
+                    }
+                  />
+                ) : (
+                  <button
+                    className="studio-model-install"
+                    type="button"
+                    disabled={installingEnhancement !== null}
+                    onClick={() => onInstallEnhancement("nsfwSegmenter")}
+                  >
+                    <Download size={12} />
+                    {installingEnhancement === "nsfwSegmenter"
+                      ? "Installing..."
+                      : "Install"}
+                  </button>
+                )}
+              </div>
+            )}
           </section>
 
           <button

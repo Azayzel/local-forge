@@ -7,12 +7,102 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultStudioState } from "../../state/workspace";
+import {
+  createDefaultAssets,
+  createDefaultStudioState,
+} from "../../state/workspace";
 import { StudioView } from "./StudioView";
 
 afterEach(cleanup);
 
-describe("StudioView image description", () => {
+describe("StudioView", () => {
+  it("loads thumbnails lazily and selects an asset from the image board", () => {
+    const assets = createDefaultAssets().slice(0, 2);
+    const onChange = vi.fn();
+    const { container } = render(
+      <StudioView
+        studio={createDefaultStudioState()}
+        imageModels={[]}
+        assets={assets}
+        upscalerConfigured={false}
+        faceDetectorConfigured={false}
+        nsfwSegmenterConfigured={false}
+        nsfwConsent={false}
+        installingEnhancement={null}
+        enhancementInstallError=""
+        visionAvailable={false}
+        visionModel=""
+        onChange={onChange}
+        onGenerate={vi.fn()}
+        onCancel={vi.fn()}
+        onScanModels={vi.fn(async () => 0)}
+        onImportAssets={vi.fn(async () => 0)}
+        onRemoveModel={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onInstallEnhancement={vi.fn()}
+        onDescribeImage={vi.fn(async () => "")}
+      />,
+    );
+
+    const thumbnails = container.querySelectorAll(
+      ".studio-history-grid img, .variant-strip img",
+    );
+    expect(thumbnails).toHaveLength(assets.length * 2);
+    thumbnails.forEach((thumbnail) => {
+      expect(thumbnail).toHaveAttribute("loading", "lazy");
+      expect(thumbnail).toHaveAttribute("decoding", "async");
+      expect(thumbnail).toHaveAttribute("fetchpriority", "low");
+    });
+
+    fireEvent.click(screen.getByAltText(assets[1].title));
+    expect(onChange).toHaveBeenCalledWith({ activeAsset: assets[1].src });
+  });
+
+  it("virtualizes large image boards and variant strips", async () => {
+    const sample = createDefaultAssets()[0];
+    const assets = Array.from({ length: 100 }, (_, index) => ({
+      ...sample,
+      id: `asset-${index}`,
+      src: `./demo/asset-${index}.jpg`,
+      title: `Asset ${index}`,
+    }));
+    const { container } = render(
+      <StudioView
+        studio={createDefaultStudioState()}
+        imageModels={[]}
+        assets={assets}
+        upscalerConfigured={false}
+        faceDetectorConfigured={false}
+        nsfwSegmenterConfigured={false}
+        nsfwConsent={false}
+        installingEnhancement={null}
+        enhancementInstallError=""
+        visionAvailable={false}
+        visionModel=""
+        onChange={vi.fn()}
+        onGenerate={vi.fn()}
+        onCancel={vi.fn()}
+        onScanModels={vi.fn(async () => 0)}
+        onImportAssets={vi.fn(async () => 0)}
+        onRemoveModel={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onInstallEnhancement={vi.fn()}
+        onDescribeImage={vi.fn(async () => "")}
+      />,
+    );
+
+    await waitFor(() => {
+      const historyImages = container.querySelectorAll(
+        ".studio-history-grid img",
+      );
+      const variantImages = container.querySelectorAll(".variant-strip img");
+      expect(historyImages.length).toBeGreaterThan(0);
+      expect(historyImages.length).toBeLessThan(assets.length);
+      expect(variantImages.length).toBeGreaterThan(0);
+      expect(variantImages.length).toBeLessThan(assets.length);
+    });
+  });
+
   it("describes the selected image and can turn it into a prompt", async () => {
     const onChange = vi.fn();
     const onDescribeImage = vi.fn(
@@ -30,6 +120,7 @@ describe("StudioView image description", () => {
         upscalerConfigured={false}
         faceDetectorConfigured={false}
         nsfwSegmenterConfigured={false}
+        nsfwConsent={false}
         installingEnhancement={null}
         enhancementInstallError=""
         visionAvailable
@@ -83,6 +174,7 @@ describe("StudioView image description", () => {
       upscalerConfigured: false,
       faceDetectorConfigured: false,
       nsfwSegmenterConfigured: false,
+      nsfwConsent: false,
       installingEnhancement: null,
       enhancementInstallError: "",
       visionAvailable: true,

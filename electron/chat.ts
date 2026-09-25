@@ -135,6 +135,7 @@ async function runRound(
       model: options.request.model,
       messages,
       options: options.request.options,
+      think: false,
       tools: bindings.length > 0 ? toolDefinitions(bindings) : undefined,
       stream: true,
     }),

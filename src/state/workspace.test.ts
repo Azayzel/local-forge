@@ -24,9 +24,11 @@ describe("workspace state", () => {
     expect(workspace.settings.upscalerModelPath).toBe("");
     expect(workspace.settings.faceDetectorModelPath).toBe("");
     expect(workspace.settings.nsfwSegmenterModelPath).toBe("");
+    expect(workspace.settings.nsfwConsent).toBe(false);
     expect(workspace.studio.upscale).toBe(false);
     expect(workspace.studio.faceFix).toBe(false);
     expect(workspace.studio.nsfwSegmentation).toBe(false);
+    expect(workspace.studio.nsfwDefaults).toBe(false);
     expect(workspace.tune.gradientAccumulation).toBe(8);
   });
 
@@ -63,6 +65,33 @@ describe("workspace state", () => {
     expect(workspace.settings.temperature).toBe(0.2);
     expect(workspace.settings.contextLength).toBe(8192);
     expect(workspace.settings.theme).toBe("forge");
+  });
+
+  it("does not restore NSFW defaults without persisted consent", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.settings.nsfwConsent = false;
+    persisted.studio.nsfwDefaults = true;
+    persisted.studio.prompt = "Persisted adult prompt";
+    persisted.studio.model = "adult-model";
+    persisted.imageModels = [
+      {
+        id: "adult-model",
+        name: "portrait-nsfw",
+        path: "D:/models/portrait-nsfw",
+        format: "diffusers",
+        architecture: "StableDiffusionPipeline",
+        modifiedAt: "2026-09-25T00:00:00.000Z",
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.settings.nsfwConsent).toBe(false);
+    expect(workspace.studio.nsfwDefaults).toBe(false);
+    expect(workspace.studio.model).toBe("");
+    expect(workspace.studio.prompt).toBe(
+      createDefaultWorkspace().studio.prompt,
+    );
   });
 
   it("migrates version one workspaces and preserves MCP configuration", () => {

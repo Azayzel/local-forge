@@ -1315,6 +1315,35 @@ export function SettingsView({
               <section className="settings-section">
                 <div className="section-heading">
                   <div>
+                    <span className="eyebrow">Content access</span>
+                    <h2>Adult content</h2>
+                  </div>
+                </div>
+                <label className="toggle-row">
+                  <span>
+                    <strong>Allow NSFW content</strong>
+                    <small>
+                      I confirm I am an adult and consent to viewing and
+                      generating NSFW content on this device
+                    </small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    aria-label="Allow NSFW content"
+                    checked={settings.nsfwConsent}
+                    onChange={(event) =>
+                      onChange({ nsfwConsent: event.target.checked })
+                    }
+                  />
+                </label>
+                <p className="settings-description">
+                  This reveals adult model and prompt controls in Studio. It
+                  does not download models or enable them automatically.
+                </p>
+              </section>
+              <section className="settings-section">
+                <div className="section-heading">
+                  <div>
                     <span className="eyebrow">Defaults</span>
                     <h2>Text generation</h2>
                   </div>
@@ -1418,29 +1447,31 @@ export function SettingsView({
                       </button>
                     </div>
                   </label>
-                  <label>
-                    <span>NSFW segmentation models</span>
-                    <div className="compound-input">
-                      <input
-                        value={settings.nsfwSegmenterModelPath}
-                        placeholder="nsfw_segmentation"
-                        spellCheck={false}
-                        onChange={(event) =>
-                          onChange({
-                            nsfwSegmenterModelPath: event.target.value,
-                          })
-                        }
-                      />
-                      <button
-                        type="button"
-                        title="Browse NSFW segmentation models"
-                        aria-label="Browse NSFW segmentation models"
-                        onClick={() => void browseNsfwSegmenterModels()}
-                      >
-                        <FolderOpen size={15} />
-                      </button>
-                    </div>
-                  </label>
+                  {settings.nsfwConsent && (
+                    <label>
+                      <span>NSFW segmentation models</span>
+                      <div className="compound-input">
+                        <input
+                          value={settings.nsfwSegmenterModelPath}
+                          placeholder="nsfw_segmentation"
+                          spellCheck={false}
+                          onChange={(event) =>
+                            onChange({
+                              nsfwSegmenterModelPath: event.target.value,
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          title="Browse NSFW segmentation models"
+                          aria-label="Browse NSFW segmentation models"
+                          onClick={() => void browseNsfwSegmenterModels()}
+                        >
+                          <FolderOpen size={15} />
+                        </button>
+                      </div>
+                    </label>
+                  )}
                   <p className="mcp-caution">
                     Install actions download pinned, checksum-verified weights
                     to Local Forge storage. You can also choose compatible local

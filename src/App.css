@@ -1790,6 +1790,13 @@
   margin-bottom: 16px;
 }
 
+.studio-nsfw-defaults {
+  margin-bottom: 12px;
+  padding-top: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+
 .studio-model-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 34px;
@@ -1857,6 +1864,7 @@
 
 .studio-history-grid button {
   aspect-ratio: 1;
+  content-visibility: auto;
   overflow: hidden;
   padding: 2px;
   border: 1px solid transparent;
@@ -1873,6 +1881,30 @@
   height: 100%;
   border-radius: 3px;
   object-fit: cover;
+}
+
+.studio-history-grid.is-virtualized {
+  position: relative;
+  display: block;
+  height: min(340px, 40vh);
+  min-height: 120px;
+  overflow-y: auto;
+}
+
+.studio-history-virtualizer {
+  position: relative;
+  width: 100%;
+}
+
+.studio-history-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding-bottom: 6px;
 }
 
 .studio-canvas-wrap {
@@ -2036,6 +2068,7 @@
   position: relative;
   width: 50px;
   height: 50px;
+  content-visibility: auto;
   overflow: hidden;
   padding: 2px;
   border: 1px solid var(--line);
@@ -2070,6 +2103,20 @@
   place-items: center;
   border-style: dashed;
   color: var(--faint);
+}
+
+.variant-virtualizer {
+  position: relative;
+  flex: 0 0 auto;
+  height: 50px;
+}
+
+.variant-virtual-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50px;
+  height: 50px;
 }
 
 .prompt-field,
@@ -2434,6 +2481,36 @@
 .asset-grid.list .asset-image {
   height: 70px;
   aspect-ratio: auto;
+}
+
+.asset-grid:not(.virtualized) .asset-tile {
+  content-visibility: auto;
+  contain-intrinsic-size: 210px;
+}
+
+.asset-grid.virtualized,
+.asset-grid.list.virtualized {
+  position: relative;
+  display: block;
+}
+
+.asset-virtualizer {
+  position: relative;
+  width: 100%;
+}
+
+.asset-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  width: 100%;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.asset-virtual-row.list {
+  grid-template-columns: 1fr;
 }
 
 .asset-details {

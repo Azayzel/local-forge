@@ -4,6 +4,7 @@ import type {
   ImageModel,
   McpServerConfig,
 } from "../types";
+import { isNsfwImageModel } from "../lib/nsfw";
 
 export type ThemeId =
   | "forge"
@@ -62,6 +63,7 @@ export interface ImageRunRecipe {
   upscale?: boolean;
   upscaleFactor?: 2 | 4;
   nsfwSegmentation?: boolean;
+  nsfwDefaults?: boolean;
 }
 
 export interface TuneRunRecipe {
@@ -93,6 +95,7 @@ export interface StudioState {
   upscale: boolean;
   upscaleFactor: 2 | 4;
   nsfwSegmentation: boolean;
+  nsfwDefaults: boolean;
   activeAsset: string;
 }
 
@@ -119,6 +122,7 @@ export interface LibraryAsset {
   createdAt: string;
   prompt: string;
   outputPath?: string;
+  nsfw?: boolean;
 }
 
 export interface ForgeSettings {
@@ -130,6 +134,7 @@ export interface ForgeSettings {
   selectedModel: string;
   temperature: number;
   contextLength: number;
+  nsfwConsent: boolean;
   reduceMotion: boolean;
   compactMode: boolean;
   theme: ThemeId;
@@ -183,6 +188,7 @@ export function createDefaultStudioState(): StudioState {
     upscale: false,
     upscaleFactor: 2,
     nsfwSegmentation: false,
+    nsfwDefaults: false,
     activeAsset: "./demo/forge-01.jpg",
   };
 }
@@ -272,6 +278,7 @@ export function createDefaultWorkspace(): WorkspaceState {
       selectedModel: "",
       temperature: 0.7,
       contextLength: 8192,
+      nsfwConsent: false,
       reduceMotion: false,
       compactMode: false,
       theme: "forge",
@@ -404,8 +411,26 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
           src: normalizeBundledAssetUrl(asset.src),
         }))
     : fallback.assets;
+  const nsfwConsent = candidate.settings?.nsfwConsent === true;
   const studio = { ...fallback.studio, ...candidate.studio };
   studio.activeAsset = normalizeBundledAssetUrl(studio.activeAsset);
+  studio.nsfwDefaults = nsfwConsent && studio.nsfwDefaults === true;
+  const selectedStudioModel = imageModels.find(
+    (model) => model.id === studio.model,
+  );
+  if (!studio.nsfwDefaults && selectedStudioModel) {
+    if (isNsfwImageModel(selectedStudioModel)) studio.model = "";
+  }
+  if (!nsfwConsent && candidate.studio?.nsfwDefaults === true) {
+    studio.prompt = fallback.studio.prompt;
+    studio.negativePrompt = fallback.studio.negativePrompt;
+  }
+  if (
+    !nsfwConsent &&
+    assets.some((asset) => asset.src === studio.activeAsset && asset.nsfw)
+  ) {
+    studio.activeAsset = assets.find((asset) => !asset.nsfw)?.src ?? "";
+  }
   const tune = { ...fallback.tune, ...candidate.tune };
   if (studio.model === "Flux.1 Schnell") studio.model = "";
 
@@ -427,6 +452,7 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
     settings: {
       ...fallback.settings,
       ...candidate.settings,
+      nsfwConsent,
       pythonPath:
         typeof candidate.settings?.pythonPath === "string" &&
         candidate.settings.pythonPath.trim()

@@ -105,6 +105,7 @@ describe("MCP chat orchestration", () => {
     }
 
     expect(requests).toHaveLength(2);
+    expect(requests[0].think).toBe(false);
     expect(requests[0].tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
