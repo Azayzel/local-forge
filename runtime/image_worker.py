@@ -12,6 +12,12 @@ from typing import Any
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+NSFW_SEGMENTER_MODELS = {
+    "breast": "nsfw-seg-breast-x.pt",
+    "penis": "nsfw-seg-penis-x.pt",
+    "vagina": "nsfw-seg-vagina-x.pt",
+}
+
 
 def emit(payload: dict) -> None:
     print(json.dumps(payload), flush=True)
@@ -163,6 +169,54 @@ def require_model_file(
         expected = ", ".join(sorted(extensions))
         raise ValueError(f"{name} must use one of these formats: {expected}.")
     return model_path
+
+
+def require_segmenter_directory(value: object) -> Path:
+    model_dir = Path(str(value or "")).expanduser().resolve()
+    if not model_dir.is_dir():
+        raise ValueError(f"NSFW segmentation model directory was not found: {model_dir}")
+    for filename in NSFW_SEGMENTER_MODELS.values():
+        if not (model_dir / filename).is_file():
+            raise ValueError(f"NSFW segmentation model was not found: {filename}")
+    return model_dir
+
+
+def segment_nsfw(
+    model_dir: Path,
+    image: Any,
+    conf: float = 0.3,
+    model_factory: Any | None = None,
+) -> dict[str, Any]:
+    import numpy as np
+    from PIL import Image
+
+    if model_factory is None:
+        try:
+            from ultralytics import YOLO
+        except ImportError as error:
+            raise RuntimeError(
+                "NSFW segmentation requires ultralytics. "
+                "Reinstall runtime/requirements-image.txt."
+            ) from error
+        model_factory = YOLO
+
+    width, height = image.size
+    masks: dict[str, Any] = {}
+    for region, filename in NSFW_SEGMENTER_MODELS.items():
+        model = model_factory(str(model_dir / filename))
+        results = model.predict(image, conf=conf, verbose=False)
+        combined = np.zeros((height, width), dtype=np.uint8)
+        for result in results:
+            if result.masks is None:
+                continue
+            for mask_data in result.masks.data:
+                mask_array = mask_data.cpu().numpy()
+                mask = Image.fromarray((mask_array * 255).astype(np.uint8))
+                mask = mask.resize((width, height), Image.Resampling.NEAREST)
+                combined = np.maximum(combined, np.asarray(mask))
+        if combined.max() > 0:
+            masks[region] = Image.fromarray(combined)
+    return masks
 
 
 def expanded_face_box(
@@ -403,6 +457,7 @@ def main() -> None:
         0.8,
     )
     upscale = bool(request.get("upscale", False))
+    nsfw_segmentation = bool(request.get("nsfw_segmentation", False))
     upscale_factor = bounded_int(
         request.get("upscale_factor", 2), "upscale_factor", 2, 4
     )
@@ -540,10 +595,34 @@ def main() -> None:
         metadata.add_text("face_fix_strength", str(face_fix_strength))
         metadata.add_text("upscale", str(upscale).lower())
         metadata.add_text("upscale_factor", str(upscale_factor))
+        metadata.add_text("nsfw_segmentation", str(nsfw_segmentation).lower())
         metadata.add_text("generator", "Local Forge")
         image.save(output_path, pnginfo=metadata)
     except ImportError:
         image.save(output_path)
+
+    if nsfw_segmentation:
+        try:
+            segmenter_dir = require_segmenter_directory(
+                request.get("nsfw_segmenter_model_dir")
+            )
+            emit({"type": "status", "message": "Running NSFW segmentation..."})
+            masks = segment_nsfw(segmenter_dir, image)
+            for region, mask in masks.items():
+                mask_path = output_dir / f"{output_path.stem}_mask_{region}.png"
+                mask.save(mask_path)
+            if masks:
+                regions = ", ".join(sorted(masks))
+                emit({"type": "log", "message": f"Saved NSFW masks: {regions}."})
+            else:
+                emit(
+                    {
+                        "type": "log",
+                        "message": "NSFW segmentation found no matching regions.",
+                    }
+                )
+        except Exception as error:
+            emit({"type": "log", "message": f"NSFW segmentation skipped: {error}"})
 
     emit(
         {

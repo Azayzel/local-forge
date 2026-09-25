@@ -3,6 +3,9 @@ import type {
   AppInfo,
   ChatRequest,
   ChatStreamEvent,
+  EnhancementInstallResult,
+  EnhancementModelKind,
+  EnhancementModelPaths,
   ForgeApi,
   ImageAttachment,
   ImageGenerationRequest,
@@ -73,6 +76,17 @@ const api: ForgeApi = {
       ) as Promise<ModelCatalogResponse>,
     open: (url: string) => ipcRenderer.invoke("catalog:open", url),
   },
+  enhancements: {
+    discover: () =>
+      ipcRenderer.invoke(
+        "enhancements:discover",
+      ) as Promise<EnhancementModelPaths>,
+    install: (kind: EnhancementModelKind) =>
+      ipcRenderer.invoke(
+        "enhancements:install",
+        kind,
+      ) as Promise<EnhancementInstallResult>,
+  },
   mcp: {
     testServer: (server: McpServerConfig) =>
       ipcRenderer.invoke("mcp:test-server", server) as Promise<McpServerStatus>,
@@ -121,6 +135,10 @@ const api: ForgeApi = {
       >,
     chooseFaceDetectorModel: () =>
       ipcRenderer.invoke("dialog:choose-face-detector-model") as Promise<
+        string | null
+      >,
+    chooseNsfwSegmenterModels: () =>
+      ipcRenderer.invoke("dialog:choose-nsfw-segmenter-models") as Promise<
         string | null
       >,
   },

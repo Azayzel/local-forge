@@ -10,6 +10,8 @@ from runtime.image_worker import (
     expanded_face_box,
     feathered_mask,
     require_model_file,
+    require_segmenter_directory,
+    segment_nsfw,
     upscale_image,
 )
 
@@ -30,6 +32,33 @@ class FakeUpscaler:
 class FakeModelLoader:
     def load_from_file(self, _model_path):
         return FakeUpscaler()
+
+
+class FakeMaskData:
+    def __init__(self, values):
+        self.values = values
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.values
+
+
+class FakeSegmenter:
+    def __init__(self, model_path):
+        self.model_path = model_path
+
+    def predict(self, _image, conf, verbose):
+        import numpy as np
+
+        self.predict_options = (conf, verbose)
+        if "penis" in self.model_path:
+            return [type("Result", (), {"masks": None})()]
+        values = np.zeros((2, 2), dtype=np.float32)
+        values[0, 0] = 1
+        masks = type("Masks", (), {"data": [FakeMaskData(values)]})()
+        return [type("Result", (), {"masks": masks})()]
 
 
 class ImageWorkerTests(unittest.TestCase):
@@ -58,6 +87,27 @@ class ImageWorkerTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "must use one of"):
                 require_model_file(invalid_path, "Face detector", {".pt"})
+
+    def test_segmenter_directory_requires_all_three_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = Path(directory)
+            for region in ("breast", "penis", "vagina"):
+                (model_dir / f"nsfw-seg-{region}-x.pt").write_bytes(b"fixture")
+
+            self.assertEqual(require_segmenter_directory(model_dir), model_dir.resolve())
+            (model_dir / "nsfw-seg-vagina-x.pt").unlink()
+            with self.assertRaisesRegex(ValueError, "vagina"):
+                require_segmenter_directory(model_dir)
+
+    def test_nsfw_segmentation_returns_only_detected_region_masks(self):
+        source = Image.new("RGB", (8, 6), (32, 64, 96))
+        masks = segment_nsfw(Path("models"), source, model_factory=FakeSegmenter)
+
+        self.assertEqual(set(masks), {"breast", "vagina"})
+        self.assertEqual(masks["breast"].size, source.size)
+        self.assertEqual(masks["breast"].mode, "L")
+        self.assertEqual(masks["breast"].getpixel((0, 0)), 255)
+        self.assertEqual(masks["breast"].getpixel((7, 5)), 0)
 
     def test_four_x_model_can_produce_exact_two_x_output(self):
         source = Image.new("RGB", (17, 13), (32, 64, 96))

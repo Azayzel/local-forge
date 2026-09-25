@@ -355,6 +355,9 @@ function RunRecipe({ run }: { run: ForgeRun }) {
           ...(recipe.upscale
             ? [["Upscale", `${recipe.upscaleFactor ?? 2}x`]]
             : []),
+          ...(recipe.nsfwSegmentation
+            ? [["NSFW segmentation", "Save detected-region masks"]]
+            : []),
           ["Prompt", recipe.prompt],
           ...(recipe.negativePrompt
             ? [["Negative prompt", recipe.negativePrompt]]
@@ -1139,6 +1142,11 @@ export function SettingsView({
     if (selected) onChange({ faceDetectorModelPath: selected });
   }
 
+  async function browseNsfwSegmenterModels() {
+    const selected = await forgeApi.dialog.chooseNsfwSegmenterModels();
+    if (selected) onChange({ nsfwSegmenterModelPath: selected });
+  }
+
   return (
     <main className="tool-view settings-view">
       <header className="tool-header">
@@ -1410,9 +1418,33 @@ export function SettingsView({
                       </button>
                     </div>
                   </label>
+                  <label>
+                    <span>NSFW segmentation models</span>
+                    <div className="compound-input">
+                      <input
+                        value={settings.nsfwSegmenterModelPath}
+                        placeholder="nsfw_segmentation"
+                        spellCheck={false}
+                        onChange={(event) =>
+                          onChange({
+                            nsfwSegmenterModelPath: event.target.value,
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        title="Browse NSFW segmentation models"
+                        aria-label="Browse NSFW segmentation models"
+                        onClick={() => void browseNsfwSegmenterModels()}
+                      >
+                        <FolderOpen size={15} />
+                      </button>
+                    </div>
+                  </label>
                   <p className="mcp-caution">
-                    Model files stay local. Local Forge does not download or
-                    bundle third-party enhancement weights.
+                    Install actions download pinned, checksum-verified weights
+                    to Local Forge storage. You can also choose compatible local
+                    files manually.
                   </p>
                 </div>
               </section>

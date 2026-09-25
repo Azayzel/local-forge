@@ -61,6 +61,7 @@ export interface ImageRunRecipe {
   faceFixStrength?: number;
   upscale?: boolean;
   upscaleFactor?: 2 | 4;
+  nsfwSegmentation?: boolean;
 }
 
 export interface TuneRunRecipe {
@@ -91,6 +92,7 @@ export interface StudioState {
   faceFixStrength: number;
   upscale: boolean;
   upscaleFactor: 2 | 4;
+  nsfwSegmentation: boolean;
   activeAsset: string;
 }
 
@@ -124,6 +126,7 @@ export interface ForgeSettings {
   pythonPath: string;
   upscalerModelPath: string;
   faceDetectorModelPath: string;
+  nsfwSegmenterModelPath: string;
   selectedModel: string;
   temperature: number;
   contextLength: number;
@@ -179,6 +182,7 @@ export function createDefaultStudioState(): StudioState {
     faceFixStrength: 0.45,
     upscale: false,
     upscaleFactor: 2,
+    nsfwSegmentation: false,
     activeAsset: "/demo/forge-01.jpg",
   };
 }
@@ -264,6 +268,7 @@ export function createDefaultWorkspace(): WorkspaceState {
       pythonPath: "python",
       upscalerModelPath: "",
       faceDetectorModelPath: "",
+      nsfwSegmenterModelPath: "",
       selectedModel: "",
       temperature: 0.7,
       contextLength: 8192,

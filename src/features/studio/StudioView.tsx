@@ -1,4 +1,5 @@
 import {
+  Download,
   FolderSearch,
   Image as ImageIcon,
   ImagePlus,
@@ -18,7 +19,7 @@ import {
   type LibraryAsset,
   type StudioState,
 } from "../../state/workspace";
-import type { ImageModel } from "../../types";
+import type { EnhancementModelKind, ImageModel } from "../../types";
 
 const stylePresets = [
   { name: "Editorial", description: "Natural light / tactile" },
@@ -34,6 +35,9 @@ interface StudioViewProps {
   activeRun?: ForgeRun;
   upscalerConfigured: boolean;
   faceDetectorConfigured: boolean;
+  nsfwSegmenterConfigured: boolean;
+  installingEnhancement: EnhancementModelKind | null;
+  enhancementInstallError: string;
   preview?: {
     src: string;
     step?: number;
@@ -46,6 +50,7 @@ interface StudioViewProps {
   onImportAssets: () => Promise<number>;
   onRemoveModel: (model: ImageModel) => void;
   onOpenSettings: () => void;
+  onInstallEnhancement: (kind: EnhancementModelKind) => void;
 }
 
 export function StudioView({
@@ -55,6 +60,9 @@ export function StudioView({
   activeRun,
   upscalerConfigured,
   faceDetectorConfigured,
+  nsfwSegmenterConfigured,
+  installingEnhancement,
+  enhancementInstallError,
   preview,
   onChange,
   onGenerate,
@@ -63,6 +71,7 @@ export function StudioView({
   onImportAssets,
   onRemoveModel,
   onOpenSettings,
+  onInstallEnhancement,
 }: StudioViewProps) {
   const [zoom, setZoom] = useState(67);
   const [notice, setNotice] = useState("");
@@ -440,13 +449,20 @@ export function StudioView({
           <section className="studio-enhancements">
             <div className="studio-enhancement-heading">
               <span>Enhance</span>
-              {(!faceDetectorConfigured || !upscalerConfigured) && (
+              {(!faceDetectorConfigured ||
+                !upscalerConfigured ||
+                !nsfwSegmenterConfigured) && (
                 <button type="button" onClick={onOpenSettings}>
                   Configure
                 </button>
               )}
             </div>
-            <label className="toggle-row">
+            {enhancementInstallError && (
+              <p className="studio-enhancement-error" role="alert">
+                {enhancementInstallError}
+              </p>
+            )}
+            <div className="toggle-row">
               <span>
                 <strong>Face Fix</strong>
                 <small>
@@ -455,15 +471,29 @@ export function StudioView({
                     : "Face detector model required"}
                 </small>
               </span>
-              <input
-                type="checkbox"
-                checked={studio.faceFix && faceDetectorConfigured}
-                disabled={!faceDetectorConfigured}
-                onChange={(event) =>
-                  onChange({ faceFix: event.target.checked })
-                }
-              />
-            </label>
+              {faceDetectorConfigured ? (
+                <input
+                  type="checkbox"
+                  aria-label="Face Fix"
+                  checked={studio.faceFix}
+                  onChange={(event) =>
+                    onChange({ faceFix: event.target.checked })
+                  }
+                />
+              ) : (
+                <button
+                  className="studio-model-install"
+                  type="button"
+                  disabled={installingEnhancement !== null}
+                  onClick={() => onInstallEnhancement("faceDetector")}
+                >
+                  <Download size={12} />
+                  {installingEnhancement === "faceDetector"
+                    ? "Installing..."
+                    : "Install"}
+                </button>
+              )}
+            </div>
             {studio.faceFix && faceDetectorConfigured && (
               <label className="range-field studio-strength">
                 <span>
@@ -482,7 +512,7 @@ export function StudioView({
                 />
               </label>
             )}
-            <label className="toggle-row">
+            <div className="toggle-row">
               <span>
                 <strong>Upscale</strong>
                 <small>
@@ -491,15 +521,29 @@ export function StudioView({
                     : "ESRGAN model required"}
                 </small>
               </span>
-              <input
-                type="checkbox"
-                checked={studio.upscale && upscalerConfigured}
-                disabled={!upscalerConfigured}
-                onChange={(event) =>
-                  onChange({ upscale: event.target.checked })
-                }
-              />
-            </label>
+              {upscalerConfigured ? (
+                <input
+                  type="checkbox"
+                  aria-label="Upscale"
+                  checked={studio.upscale}
+                  onChange={(event) =>
+                    onChange({ upscale: event.target.checked })
+                  }
+                />
+              ) : (
+                <button
+                  className="studio-model-install"
+                  type="button"
+                  disabled={installingEnhancement !== null}
+                  onClick={() => onInstallEnhancement("upscaler")}
+                >
+                  <Download size={12} />
+                  {installingEnhancement === "upscaler"
+                    ? "Installing..."
+                    : "Install"}
+                </button>
+              )}
+            </div>
             {studio.upscale && upscalerConfigured && (
               <div className="studio-upscale-factor">
                 <span>Output scale</span>
@@ -519,6 +563,38 @@ export function StudioView({
                 </div>
               </div>
             )}
+            <div className="toggle-row">
+              <span>
+                <strong>NSFW Segmentation</strong>
+                <small>
+                  {nsfwSegmenterConfigured
+                    ? "Save detected-region masks"
+                    : "Segmentation models required"}
+                </small>
+              </span>
+              {nsfwSegmenterConfigured ? (
+                <input
+                  type="checkbox"
+                  aria-label="NSFW Segmentation"
+                  checked={studio.nsfwSegmentation}
+                  onChange={(event) =>
+                    onChange({ nsfwSegmentation: event.target.checked })
+                  }
+                />
+              ) : (
+                <button
+                  className="studio-model-install"
+                  type="button"
+                  disabled={installingEnhancement !== null}
+                  onClick={() => onInstallEnhancement("nsfwSegmenter")}
+                >
+                  <Download size={12} />
+                  {installingEnhancement === "nsfwSegmenter"
+                    ? "Installing..."
+                    : "Install"}
+                </button>
+              )}
+            </div>
           </section>
 
           <button

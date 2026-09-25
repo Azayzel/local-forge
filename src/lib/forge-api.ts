@@ -142,6 +142,18 @@ function createBrowserApi(): ForgeApi {
         globalThis.open(url, "_blank", "noopener,noreferrer");
       },
     },
+    enhancements: {
+      discover: async () => ({
+        upscalerModelPath: "",
+        faceDetectorModelPath: "",
+        nsfwSegmenterModelPath: "",
+      }),
+      install: async () => {
+        throw new Error(
+          "Enhancement models can only be installed from the desktop app.",
+        );
+      },
+    },
     mcp: {
       testServer: async (server) => ({
         serverId: server.id,
@@ -195,6 +207,7 @@ function createBrowserApi(): ForgeApi {
       chooseTrainingModel: async () => null,
       chooseUpscalerModel: async () => null,
       chooseFaceDetectorModel: async () => null,
+      chooseNsfwSegmenterModels: async () => null,
     },
   };
 }

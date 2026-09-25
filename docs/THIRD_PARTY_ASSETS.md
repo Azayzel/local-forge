@@ -17,6 +17,20 @@ The files are `1200 x 1800`, `1200 x 800`, `1200 x 800`, and `1200 x 1800` respe
 
 Images imported by a user are copied into that user's private Local Forge data directory. They are never included in the source tree or project releases.
 
+## Optional enhancement models
+
+Local Forge does not bundle enhancement weights. When a user chooses Install in Studio, the app downloads an immutable, checksum-verified revision to that user's private Local Forge data directory:
+
+| Purpose | Repository | File | SHA-256 |
+| --- | --- | --- | --- |
+| 4x image upscaling | [lokCX/4x-Ultrasharp](https://huggingface.co/lokCX/4x-Ultrasharp) | `4x-UltraSharp.pth` | `a5812231fc936b42af08a5edba784195495d303d5b3248c24489ef0c4021fe01` |
+| Face detection | [Bingsu/adetailer](https://huggingface.co/Bingsu/adetailer) | `face_yolov8n.pt` | `70b640f8f60b1cf0dcc72f30caf3da9495eb2fb6509da48c53374ad6806e6a9c` |
+| Breast segmentation | [NSFW-API/NSFW_Segmentation](https://huggingface.co/NSFW-API/NSFW_Segmentation) | `nsfw-seg-breast-x.pt` | `5ad882ddaf149873be131943b373da9f15a0603c91508e2291ece83d729c8ecc` |
+| Penis segmentation | [NSFW-API/NSFW_Segmentation](https://huggingface.co/NSFW-API/NSFW_Segmentation) | `nsfw-seg-penis-x.pt` | `49d9fc8ee67d3bdee44e46bf75aeb76058f5cd074bac027b55ff071b63a32e21` |
+| Vagina segmentation | [NSFW-API/NSFW_Segmentation](https://huggingface.co/NSFW-API/NSFW_Segmentation) | `nsfw-seg-vagina-x.pt` | `f8349ae348f5cf041809c38bf38d2c80a0f3dccdb1375b97971358cde742197f` |
+
+These files remain subject to the terms published by their respective authors and are not covered by Local Forge's MIT code license.
+
 ## Fonts and icons
 
 - Manrope and Space Grotesk are bundled through Fontsource packages and distributed under the SIL Open Font License 1.1.

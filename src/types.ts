@@ -185,6 +185,22 @@ export interface ImageModel {
   modifiedAt: string;
 }
 
+export interface EnhancementModelPaths {
+  upscalerModelPath: string;
+  faceDetectorModelPath: string;
+  nsfwSegmenterModelPath: string;
+}
+
+export type EnhancementModelKind =
+  | "upscaler"
+  | "faceDetector"
+  | "nsfwSegmenter";
+
+export interface EnhancementInstallResult {
+  kind: EnhancementModelKind;
+  path: string;
+}
+
 export type ModelCatalogCategory = "chat" | "image" | "video" | "training";
 export type ModelCatalogSource = "ollama" | "huggingface";
 export type ModelCatalogRuntime =
@@ -247,6 +263,8 @@ export interface ImageGenerationRequest {
   upscale: boolean;
   upscaleFactor: 2 | 4;
   upscalerModelPath: string;
+  nsfwSegmentation: boolean;
+  nsfwSegmenterModelPath: string;
 }
 
 export interface TrainingRequest {
@@ -316,6 +334,10 @@ export interface ForgeApi {
     list: (refresh?: boolean) => Promise<ModelCatalogResponse>;
     open: (url: string) => Promise<void>;
   };
+  enhancements: {
+    discover: () => Promise<EnhancementModelPaths>;
+    install: (kind: EnhancementModelKind) => Promise<EnhancementInstallResult>;
+  };
   mcp: {
     testServer: (server: McpServerConfig) => Promise<McpServerStatus>;
     disconnectServer: (serverId: string) => Promise<void>;
@@ -340,5 +362,6 @@ export interface ForgeApi {
     chooseTrainingModel: () => Promise<string | null>;
     chooseUpscalerModel: () => Promise<string | null>;
     chooseFaceDetectorModel: () => Promise<string | null>;
+    chooseNsfwSegmenterModels: () => Promise<string | null>;
   };
 }

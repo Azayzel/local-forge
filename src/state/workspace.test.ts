@@ -23,8 +23,10 @@ describe("workspace state", () => {
     expect(workspace.settings.pythonPath).toBe("python");
     expect(workspace.settings.upscalerModelPath).toBe("");
     expect(workspace.settings.faceDetectorModelPath).toBe("");
+    expect(workspace.settings.nsfwSegmenterModelPath).toBe("");
     expect(workspace.studio.upscale).toBe(false);
     expect(workspace.studio.faceFix).toBe(false);
+    expect(workspace.studio.nsfwSegmentation).toBe(false);
     expect(workspace.tune.gradientAccumulation).toBe(8);
   });
 

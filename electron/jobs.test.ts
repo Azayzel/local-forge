@@ -51,10 +51,20 @@ describe("LocalJobManager", () => {
     const modelPath = path.join(root, "image-model");
     const upscalerPath = path.join(root, "4x-UltraSharp.pth");
     const faceDetectorPath = path.join(root, "face-detector.pt");
+    const segmenterPath = path.join(root, "nsfw-segmentation");
     await fs.mkdir(modelPath);
+    await fs.mkdir(segmenterPath);
     await fs.writeFile(path.join(modelPath, "model_index.json"), "{}");
     await fs.writeFile(upscalerPath, "fixture");
     await fs.writeFile(faceDetectorPath, "fixture");
+    await Promise.all(
+      ["breast", "penis", "vagina"].map((region) =>
+        fs.writeFile(
+          path.join(segmenterPath, `nsfw-seg-${region}-x.pt`),
+          "fixture",
+        ),
+      ),
+    );
     const events: JobEvent[] = [];
     const manager = new LocalJobManager({
       runtimeDirectory: () => root,
@@ -87,6 +97,8 @@ describe("LocalJobManager", () => {
         upscale: true,
         upscaleFactor: 4,
         upscalerModelPath: upscalerPath,
+        nsfwSegmentation: true,
+        nsfwSegmenterModelPath: segmenterPath,
       },
       (event) => events.push(event),
     );
@@ -107,7 +119,7 @@ describe("LocalJobManager", () => {
           root,
           "outputs",
           "images",
-          "fixture-preview-1.png",
+          "preview-fixture-1.png",
         ),
         step: 1,
         total: 2,
@@ -135,6 +147,12 @@ describe("LocalJobManager", () => {
       }),
     );
     await expect(
+      fs.stat(path.join(root, "outputs", "images", "preview-fixture-1.png")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      fs.stat(path.join(root, "outputs", "images", "fixture.png")),
+    ).resolves.toMatchObject({ size: 7 });
+    await expect(
       fs.readFile(path.join(root, "outputs", "images", "request.json"), "utf8"),
     ).resolves.toEqual(
       JSON.stringify({
@@ -151,8 +169,29 @@ describe("LocalJobManager", () => {
         upscale: true,
         upscale_factor: 4,
         upscaler_model: upscalerPath,
+        nsfw_segmentation: true,
+        nsfw_segmenter_model_dir: segmenterPath,
       }),
     );
+  });
+
+  it("purges stale previews without deleting final images", async () => {
+    const root = await temporaryDirectory();
+    const outputDirectory = path.join(root, "outputs", "images");
+    const preview = path.join(outputDirectory, "preview-stale-job-001.png");
+    const final = path.join(outputDirectory, "final-image.png");
+    await fs.mkdir(outputDirectory, { recursive: true });
+    await fs.writeFile(preview, "preview");
+    await fs.writeFile(final, "final");
+    const manager = new LocalJobManager({
+      runtimeDirectory: () => root,
+      outputDirectory: () => path.join(root, "outputs"),
+    });
+
+    await manager.cleanupPreviews();
+
+    await expect(fs.stat(preview)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fs.readFile(final, "utf8")).resolves.toBe("final");
   });
 
   it("runs training only with a local Transformers model and dataset", async () => {
@@ -228,6 +267,8 @@ describe("LocalJobManager", () => {
       upscale: false,
       upscaleFactor: 2 as const,
       upscalerModelPath: "",
+      nsfwSegmentation: false,
+      nsfwSegmenterModelPath: "",
     };
 
     await expect(
@@ -250,6 +291,16 @@ describe("LocalJobManager", () => {
         () => undefined,
       ),
     ).rejects.toThrow("Upscaler model was not found");
+    await expect(
+      manager.startImage(
+        {
+          ...request,
+          nsfwSegmentation: true,
+          nsfwSegmenterModelPath: path.join(root, "missing-segmenters"),
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow("NSFW segmentation model directory was not found");
   });
 
   it("rejects single-file image checkpoints before spawning Python", async () => {
@@ -285,6 +336,8 @@ describe("LocalJobManager", () => {
           upscale: false,
           upscaleFactor: 2,
           upscalerModelPath: "",
+          nsfwSegmentation: false,
+          nsfwSegmenterModelPath: "",
         },
         () => undefined,
       ),

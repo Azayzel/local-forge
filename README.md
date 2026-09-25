@@ -28,6 +28,7 @@ Local Forge is a fast, local-first desktop workbench for open models. Chat with 
 - Persistent sessions, image attachments, search, pinning, and deletion
 - Local Diffusers and `.safetensors` / `.ckpt` model registration
 - Cancellable image generation with live step progress and Library import
+- Optional Face Fix, tiled 2x/4x UltraSharp upscaling, and saved NSFW region masks
 - Cancellable QLoRA training with live progress and standard PEFT output
 - Screenshot and reference-image imports shared by Studio and Library
 - Live RAM and NVIDIA telemetry, with unavailable data left unknown
@@ -58,7 +59,7 @@ python -m pip install -r runtime/requirements-training.txt
 
 Select that interpreter under **Settings > Runtimes > Python runtime**. Local Forge never installs Python packages or downloads model weights automatically.
 
-Studio executes local Diffusers directories containing `model_index.json`. Registered `.safetensors` and `.ckpt` files remain visible for inventory but must be converted to Diffusers format before generation. Completed PNGs are added to Library and stored under Local Forge's user-data `outputs/images` directory.
+Studio executes local Diffusers directories containing `model_index.json`. Registered `.safetensors` and `.ckpt` files remain visible for inventory but must be converted to Diffusers format before generation. Completed PNGs are added to Library and stored under Local Forge's user-data `outputs/images` directory. Optional NSFW segmentation writes one binary mask per detected region beside the completed image.
 
 Tune requires a local Hugging Face Transformers model directory containing `config.json`; Ollama tags and GGUF files are inference artifacts and are not offered as trainable base models. Datasets may be JSON, JSONL, or CSV and should contain either a `text` field or chat `messages`. Completed adapters use standard PEFT format under `outputs/adapters`.
 

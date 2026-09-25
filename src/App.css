@@ -2159,6 +2159,34 @@
   font-size: 9px;
 }
 
+.studio-enhancement-error {
+  margin: 7px 0 2px;
+  color: var(--danger);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.studio-model-install {
+  display: inline-flex;
+  min-width: 72px;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--ember) 42%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ember) 8%, var(--panel-strong));
+  color: var(--ember);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.studio-model-install:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .studio-enhancements .toggle-row:first-of-type {
   margin-top: 4px;
 }

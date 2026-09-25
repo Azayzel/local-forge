@@ -38,6 +38,7 @@ import type {
 } from "./state/workspace";
 import type {
   AppView,
+  EnhancementModelKind,
   ImageModel,
   JobEvent,
   OllamaModel,
@@ -96,6 +97,75 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [imagePreview, setImagePreview] = useState<JobEvent | null>(null);
+  const [installingEnhancement, setInstallingEnhancement] =
+    useState<EnhancementModelKind | null>(null);
+  const [enhancementInstallError, setEnhancementInstallError] = useState("");
+
+  const discoverEnhancements = useEffectEvent(async () => {
+    try {
+      const discovered = await forgeApi.enhancements.discover();
+      setWorkspace((current) => {
+        const upscalerModelPath = current.settings.upscalerModelPath.trim()
+          ? current.settings.upscalerModelPath
+          : discovered.upscalerModelPath;
+        const faceDetectorModelPath =
+          current.settings.faceDetectorModelPath.trim()
+            ? current.settings.faceDetectorModelPath
+            : discovered.faceDetectorModelPath;
+        const nsfwSegmenterModelPath =
+          current.settings.nsfwSegmenterModelPath.trim()
+            ? current.settings.nsfwSegmenterModelPath
+            : discovered.nsfwSegmenterModelPath;
+        if (
+          upscalerModelPath === current.settings.upscalerModelPath &&
+          faceDetectorModelPath === current.settings.faceDetectorModelPath &&
+          nsfwSegmenterModelPath === current.settings.nsfwSegmenterModelPath
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          settings: {
+            ...current.settings,
+            upscalerModelPath,
+            faceDetectorModelPath,
+            nsfwSegmenterModelPath,
+          },
+        };
+      });
+    } catch (error) {
+      console.warn("Could not discover enhancement models:", error);
+    }
+  });
+
+  useEffect(() => {
+    if (loaded) void discoverEnhancements();
+  }, [loaded]);
+
+  async function installEnhancement(kind: EnhancementModelKind) {
+    setInstallingEnhancement(kind);
+    setEnhancementInstallError("");
+    try {
+      const installed = await forgeApi.enhancements.install(kind);
+      setWorkspace((current) => ({
+        ...current,
+        settings: {
+          ...current.settings,
+          ...(installed.kind === "upscaler"
+            ? { upscalerModelPath: installed.path }
+            : installed.kind === "faceDetector"
+              ? { faceDetectorModelPath: installed.path }
+              : { nsfwSegmenterModelPath: installed.path }),
+        },
+      }));
+    } catch (error) {
+      setEnhancementInstallError(
+        error instanceof Error ? error.message : "Model installation failed.",
+      );
+    } finally {
+      setInstallingEnhancement(null);
+    }
+  }
 
   async function refreshModels() {
     try {
@@ -350,6 +420,8 @@ function App() {
         upscale: Boolean(recipe.upscale),
         upscaleFactor: recipe.upscaleFactor ?? 2,
         upscalerModelPath: workspace.settings.upscalerModelPath,
+        nsfwSegmentation: Boolean(recipe.nsfwSegmentation),
+        nsfwSegmenterModelPath: workspace.settings.nsfwSegmenterModelPath,
       });
     } catch (error) {
       failRun(jobId, error);
@@ -424,6 +496,9 @@ function App() {
         workspace.studio.upscale &&
         Boolean(workspace.settings.upscalerModelPath.trim()),
       upscaleFactor: workspace.studio.upscaleFactor,
+      nsfwSegmentation:
+        workspace.studio.nsfwSegmentation &&
+        Boolean(workspace.settings.nsfwSegmenterModelPath.trim()),
     };
     await queueImageRun(
       recipe,
@@ -500,6 +575,7 @@ function App() {
         faceFixStrength: recipe.faceFixStrength ?? 0.45,
         upscale: recipe.upscale ?? false,
         upscaleFactor: recipe.upscaleFactor ?? 2,
+        nsfwSegmentation: recipe.nsfwSegmentation ?? false,
         activeAsset: outputUrl,
       },
     }));
@@ -759,6 +835,11 @@ function App() {
               faceDetectorConfigured={Boolean(
                 workspace.settings.faceDetectorModelPath.trim(),
               )}
+              nsfwSegmenterConfigured={Boolean(
+                workspace.settings.nsfwSegmenterModelPath.trim(),
+              )}
+              installingEnhancement={installingEnhancement}
+              enhancementInstallError={enhancementInstallError}
               preview={
                 imagePreview &&
                 imagePreview.jobId === activeImageRun?.id &&
@@ -782,6 +863,7 @@ function App() {
               onImportAssets={importStudioAssets}
               onRemoveModel={removeImageModel}
               onOpenSettings={() => selectView("settings")}
+              onInstallEnhancement={(kind) => void installEnhancement(kind)}
             />
           )}
           {workspace.activeView === "library" && (

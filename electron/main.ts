@@ -20,6 +20,9 @@ import {
 import type {
   ChatRequest,
   ChatStreamEvent,
+  EnhancementInstallResult,
+  EnhancementModelKind,
+  EnhancementModelPaths,
   ImageAttachment,
   ImageGenerationRequest,
   ImageModel,
@@ -36,6 +39,10 @@ import type {
   TrainingRequest,
 } from "../src/types";
 import { runMcpChat } from "./chat";
+import {
+  discoverEnhancementModels,
+  installEnhancementModel,
+} from "./enhancement-models";
 import { LocalJobManager } from "./jobs";
 import { closeMcpConnections, disconnectMcpServer, testMcpServer } from "./mcp";
 import { discoverModelCatalog } from "./model-catalog";
@@ -173,6 +180,17 @@ function emitJob(sender: WebContents, event: JobEvent): void {
         ? outputUrl(event.outputPath)
         : undefined,
   });
+}
+
+function enhancementModelRoots(): string[] {
+  const appRoot = app.getAppPath();
+  return [
+    path.join(app.getPath("userData"), "models"),
+    path.join(appRoot, "models"),
+    path.join(process.resourcesPath, "models"),
+    path.resolve(appRoot, "..", "Lavely-LLM", "models"),
+    path.resolve(process.cwd(), "..", "Lavely-LLM", "models"),
+  ].filter((root, index, roots) => roots.indexOf(root) === index);
 }
 
 async function imageForOllama(value: string): Promise<string> {
@@ -662,6 +680,21 @@ function registerIpc(): void {
     shell.openExternal(modelCatalogUrl(url)),
   );
 
+  ipcMain.handle(
+    "enhancements:discover",
+    (): Promise<EnhancementModelPaths> =>
+      discoverEnhancementModels(enhancementModelRoots()),
+  );
+  ipcMain.handle(
+    "enhancements:install",
+    (_event, kind: EnhancementModelKind): Promise<EnhancementInstallResult> =>
+      installEnhancementModel(
+        path.join(app.getPath("userData"), "models"),
+        kind,
+        (url) => net.fetch(url),
+      ),
+  );
+
   ipcMain.handle("mcp:test-server", (_event, server: McpServerConfig) =>
     testMcpServer(server),
   );
@@ -846,6 +879,18 @@ function registerIpc(): void {
       return result.canceled ? null : (result.filePaths[0] ?? null);
     },
   );
+
+  ipcMain.handle(
+    "dialog:choose-nsfw-segmenter-models",
+    async (): Promise<string | null> => {
+      const result = await dialog.showOpenDialog({
+        title: "Select an NSFW segmentation model directory",
+        buttonLabel: "Select models",
+        properties: ["openDirectory"],
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+  );
 }
 
 function createWindow(): void {
@@ -891,7 +936,7 @@ function createWindow(): void {
 
 registerIpc();
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   app.setAppUserModelId("io.localforge.desktop");
   void protocol.handle(ATTACHMENT_SCHEME, async (request) => {
     try {
@@ -910,6 +955,9 @@ void app.whenReady().then(() => {
     } catch {
       return new Response("Output not found.", { status: 404 });
     }
+  });
+  await jobs.cleanupPreviews().catch((error) => {
+    console.warn("Could not remove temporary image previews:", error);
   });
   createWindow();
   app.on("activate", () => {

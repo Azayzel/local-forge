@@ -19,9 +19,16 @@ interface ActiveJob {
   kind: JobKind;
   outputDirectory: string;
   emit: (event: JobEvent) => void;
+  previewPaths: Set<string>;
 }
 
 const JOB_ID_PATTERN = /^[A-Za-z0-9_-]{1,120}$/;
+const PREVIEW_FILE_PATTERN = /^preview-[A-Za-z0-9_-]+\.png$/;
+const NSFW_SEGMENTER_FILES = [
+  "nsfw-seg-breast-x.pt",
+  "nsfw-seg-penis-x.pt",
+  "nsfw-seg-vagina-x.pt",
+];
 
 function assertNumber(
   value: number,
@@ -122,6 +129,7 @@ export class LocalJobManager {
     assertBoolean(request.faceFix, "Face Fix");
     assertNumber(request.faceFixStrength, "Face Fix strength", 0.1, 0.8);
     assertBoolean(request.upscale, "Upscale");
+    assertBoolean(request.nsfwSegmentation, "NSFW segmentation");
     if (request.upscaleFactor !== 2 && request.upscaleFactor !== 4) {
       throw new Error("Upscale factor must be 2 or 4.");
     }
@@ -138,6 +146,20 @@ export class LocalJobManager {
         ".pt",
         ".safetensors",
       ]);
+    }
+    if (request.nsfwSegmentation) {
+      await assertDirectory(
+        request.nsfwSegmenterModelPath,
+        "NSFW segmentation model directory",
+      );
+      await Promise.all(
+        NSFW_SEGMENTER_FILES.map((filename) =>
+          assertFile(
+            path.join(request.nsfwSegmenterModelPath, filename),
+            `NSFW segmentation model ${filename}`,
+          ),
+        ),
+      );
     }
 
     const outputDirectory = path.join(this.paths.outputDirectory(), "images");
@@ -173,6 +195,8 @@ export class LocalJobManager {
         upscale: request.upscale,
         upscale_factor: request.upscaleFactor,
         upscaler_model: request.upscalerModelPath,
+        nsfw_segmentation: request.nsfwSegmentation,
+        nsfw_segmenter_model_dir: request.nsfwSegmenterModelPath,
       },
       outputDirectory,
       emit,
@@ -244,6 +268,26 @@ export class LocalJobManager {
     this.processes.cancelAll();
   }
 
+  async cleanupPreviews(): Promise<void> {
+    const outputDirectory = path.join(this.paths.outputDirectory(), "images");
+    let entries;
+    try {
+      entries = await fs.readdir(outputDirectory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    await Promise.all(
+      entries
+        .filter(
+          (entry) => entry.isFile() && PREVIEW_FILE_PATTERN.test(entry.name),
+        )
+        .map((entry) =>
+          fs.rm(path.join(outputDirectory, entry.name), { force: true }),
+        ),
+    );
+  }
+
   private assertPythonPath(value: string): void {
     if (
       !value.trim() ||
@@ -266,7 +310,12 @@ export class LocalJobManager {
   ): void {
     if (this.active.has(jobId))
       throw new Error(`Job ${jobId} is already active.`);
-    this.active.set(jobId, { kind, outputDirectory, emit });
+    this.active.set(jobId, {
+      kind,
+      outputDirectory,
+      emit,
+      previewPaths: new Set(),
+    });
     emit({ jobId, kind, type: "queued", progress: 0 });
     try {
       this.processes.start(
@@ -315,14 +364,23 @@ export class LocalJobManager {
       return;
     }
     if (event.type === "preview") {
+      let outputPath = "";
       try {
         if (job.kind !== "image" || typeof event.path !== "string") {
           throw new Error("Worker preview is not a valid image output.");
         }
-        const outputPath = path.resolve(event.path);
+        outputPath = path.resolve(event.path);
         assertInside(job.outputDirectory, outputPath);
+        if (!PREVIEW_FILE_PATTERN.test(path.basename(outputPath))) {
+          throw new Error("Worker preview has an invalid filename.");
+        }
+        job.previewPaths.add(outputPath);
         const stat = await fs.stat(outputPath);
         if (!stat.isFile()) throw new Error("Worker preview is not a file.");
+        if (this.active.get(jobId) !== job) {
+          await fs.rm(outputPath, { force: true });
+          return;
+        }
         const step = Number(event.step);
         const total = Number(event.total);
         const progress =
@@ -345,6 +403,8 @@ export class LocalJobManager {
             : undefined,
         });
       } catch (error) {
+        if (outputPath) job.previewPaths.delete(outputPath);
+        if (this.active.get(jobId) !== job) return;
         job.emit({
           jobId,
           kind: job.kind,
@@ -367,6 +427,7 @@ export class LocalJobManager {
     }
     if (event.type === "error" || event.type === "cancelled") {
       this.active.delete(jobId);
+      await this.cleanupJobPreviews(job);
       job.emit({
         jobId,
         kind: job.kind,
@@ -391,6 +452,7 @@ export class LocalJobManager {
         throw new Error("Training worker output is not a directory.");
       }
       this.active.delete(jobId);
+      await this.cleanupJobPreviews(job);
       job.emit({
         jobId,
         kind: job.kind,
@@ -406,6 +468,7 @@ export class LocalJobManager {
       });
     } catch (error) {
       this.active.delete(jobId);
+      await this.cleanupJobPreviews(job);
       job.emit({
         jobId,
         kind: job.kind,
@@ -414,5 +477,15 @@ export class LocalJobManager {
           error instanceof Error ? error.message : "Invalid worker output.",
       });
     }
+  }
+
+  private async cleanupJobPreviews(job: ActiveJob): Promise<void> {
+    const previewPaths = [...job.previewPaths];
+    job.previewPaths.clear();
+    await Promise.all(
+      previewPaths.map((previewPath) =>
+        fs.rm(previewPath, { force: true }).catch(() => undefined),
+      ),
+    );
   }
 }
