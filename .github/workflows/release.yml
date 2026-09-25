@@ -108,6 +108,7 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 7
+          overwrite: true
 
   publish:
     name: Publish GitHub release

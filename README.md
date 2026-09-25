@@ -89,7 +89,7 @@ Download installers from [GitHub Releases](https://github.com/Azayzel/local-forg
 All three installers and `SHA256SUMS.txt` are uploaded before the release is published. To verify a download, compare its SHA-256 hash with the matching entry in that file:
 
 ```powershell
-Get-FileHash .\Local-Forge-installer.exe -Algorithm SHA256
+Get-FileHash .\Local-Forge-0.1.0-main.42-win-x64.exe -Algorithm SHA256
 ```
 
 Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS use `shasum -a 256 -c SHA256SUMS.txt`.
