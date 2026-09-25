@@ -11,6 +11,7 @@ import {
   createDefaultAssets,
   createDefaultStudioState,
 } from "../../state/workspace";
+import { NSFW_STUDIO_PROMPT } from "../../lib/nsfw";
 import { StudioView } from "./StudioView";
 
 afterEach(cleanup);
@@ -101,6 +102,76 @@ describe("StudioView", () => {
       expect(variantImages.length).toBeGreaterThan(0);
       expect(variantImages.length).toBeLessThan(assets.length);
     });
+  });
+
+  it("reveals adult models and prompts only after both NSFW opt-ins", () => {
+    const studio = createDefaultStudioState();
+    const safeModel = {
+      id: "safe-model",
+      name: "Landscape XL",
+      path: "D:/models/landscape-xl",
+      format: "diffusers" as const,
+      architecture: "StableDiffusionPipeline",
+      modifiedAt: "2026-09-25T00:00:00.000Z",
+    };
+    const adultModel = {
+      ...safeModel,
+      id: "adult-model",
+      name: "Portrait NSFW XL",
+      path: "D:/models/portrait-nsfw-xl",
+    };
+    const onChange = vi.fn();
+    const props = {
+      studio,
+      imageModels: [safeModel, adultModel],
+      assets: [],
+      upscalerConfigured: false,
+      faceDetectorConfigured: false,
+      nsfwSegmenterConfigured: false,
+      nsfwConsent: false,
+      installingEnhancement: null,
+      enhancementInstallError: "",
+      visionAvailable: false,
+      visionModel: "",
+      onChange,
+      onGenerate: vi.fn(),
+      onCancel: vi.fn(),
+      onScanModels: vi.fn(async () => 0),
+      onImportAssets: vi.fn(async () => 0),
+      onRemoveModel: vi.fn(),
+      onOpenSettings: vi.fn(),
+      onInstallEnhancement: vi.fn(),
+      onDescribeImage: vi.fn(async () => ""),
+    };
+    const { rerender } = render(<StudioView {...props} />);
+
+    expect(
+      screen.queryByRole("checkbox", { name: "Enable NSFW defaults" }),
+    ).toBeNull();
+    expect(screen.queryByRole("option", { name: /Portrait NSFW/ })).toBeNull();
+
+    rerender(<StudioView {...props} nsfwConsent />);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Enable NSFW defaults" }),
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nsfwDefaults: true,
+        model: adultModel.id,
+        prompt: NSFW_STUDIO_PROMPT,
+      }),
+    );
+
+    rerender(
+      <StudioView
+        {...props}
+        nsfwConsent
+        studio={{ ...studio, nsfwDefaults: true, model: adultModel.id }}
+      />,
+    );
+    expect(
+      screen.getByRole("option", { name: "Portrait NSFW XL (NSFW)" }),
+    ).toBeVisible();
   });
 
   it("describes the selected image and can turn it into a prompt", async () => {

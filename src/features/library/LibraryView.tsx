@@ -45,6 +45,25 @@ function useElementWidth(elementRef: React.RefObject<HTMLElement | null>) {
   return width;
 }
 
+function useScrollableGalleryLayout() {
+  const [enabled, setEnabled] = useState(
+    () =>
+      typeof window.matchMedia !== "function" ||
+      window.matchMedia("(min-width: 821px)").matches,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(min-width: 821px)");
+    const update = () => setEnabled(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return enabled;
+}
+
 export function LibraryView({
   assets,
   onImport,
@@ -64,6 +83,7 @@ export function LibraryView({
     asset.title.toLowerCase().includes(deferredQuery.toLowerCase()),
   );
   const gridWidth = useElementWidth(assetGridRef);
+  const scrollableGalleryLayout = useScrollableGalleryLayout();
   const maximumColumns = selected ? 3 : 4;
   const columnCount =
     layout === "list"
@@ -79,7 +99,8 @@ export function LibraryView({
               : maximumColumns,
           ),
         );
-  const shouldVirtualize = filtered.length > VIRTUALIZE_AFTER;
+  const shouldVirtualize =
+    scrollableGalleryLayout && filtered.length > VIRTUALIZE_AFTER;
   const rowCount = Math.ceil(filtered.length / columnCount);
   const estimatedTileWidth =
     ((gridWidth || (selected ? 700 : 900)) - ASSET_GAP * (columnCount - 1)) /

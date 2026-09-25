@@ -567,6 +567,7 @@ export function StudioView({
                 </span>
                 <input
                   type="checkbox"
+                  aria-label="Enable NSFW defaults"
                   checked={studio.nsfwDefaults}
                   onChange={(event) => toggleNsfwDefaults(event.target.checked)}
                 />
