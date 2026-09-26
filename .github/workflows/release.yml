@@ -149,7 +149,20 @@ jobs:
         working-directory: artifacts
         shell: bash
         run: |
-          state=$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq '.isDraft' 2>/dev/null || true)
+          release_view_stderr=$(mktemp)
+          if state=$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq '.isDraft' 2>"$release_view_stderr"); then
+            :
+          else
+            status=$?
+            if grep -qi 'release not found' "$release_view_stderr"; then
+              state=
+            else
+              cat "$release_view_stderr" >&2
+              rm -f "$release_view_stderr"
+              exit "$status"
+            fi
+          fi
+          rm -f "$release_view_stderr"
           if [[ "$state" == "false" ]]; then
             echo "Release $RELEASE_TAG is already published; leaving its assets unchanged."
             exit 0
