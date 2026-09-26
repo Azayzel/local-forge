@@ -67,6 +67,7 @@ function createBrowserApi(): ForgeApi {
         version: "preview-runtime",
       }),
       models: async () => previewModels,
+      warmModel: async () => undefined,
       chat: async (request) => {
         const response =
           "This browser preview is using a simulated local runtime. Launch the Electron app to stream a response from your installed Ollama models.";
@@ -116,6 +117,16 @@ function createBrowserApi(): ForgeApi {
         return () => pullListeners.delete(callback);
       },
     },
+    vision: {
+      describe: async (request) => ({
+        text:
+          request.mode === "prompt"
+            ? "editorial portrait, natural window light, centered composition, tactile detail"
+            : "An editorial portrait composed with natural window light and tactile detail.",
+        model: request.model,
+        mode: request.mode,
+      }),
+    },
     catalog: {
       list: async () => ({
         items: [],
@@ -140,6 +151,18 @@ function createBrowserApi(): ForgeApi {
       }),
       open: async (url) => {
         globalThis.open(url, "_blank", "noopener,noreferrer");
+      },
+    },
+    enhancements: {
+      discover: async () => ({
+        upscalerModelPath: "",
+        faceDetectorModelPath: "",
+        nsfwSegmenterModelPath: "",
+      }),
+      install: async () => {
+        throw new Error(
+          "Enhancement models can only be installed from the desktop app.",
+        );
       },
     },
     mcp: {
@@ -195,6 +218,7 @@ function createBrowserApi(): ForgeApi {
       chooseTrainingModel: async () => null,
       chooseUpscalerModel: async () => null,
       chooseFaceDetectorModel: async () => null,
+      chooseNsfwSegmenterModels: async () => null,
     },
   };
 }

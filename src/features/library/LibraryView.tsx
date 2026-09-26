@@ -7,9 +7,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { forgeApi } from "../../lib/forge-api";
 import type { LibraryAsset } from "../../state/workspace";
+
+const ASSET_GAP = 12;
+const MIN_GRID_TILE_WIDTH = 150;
+const VIRTUALIZE_AFTER = 24;
 
 interface LibraryViewProps {
   assets: LibraryAsset[];
@@ -21,6 +26,42 @@ interface LibraryViewProps {
 function assetFormat(src: string): string {
   const extension = src.split(".").pop()?.toUpperCase();
   return extension === "JPG" ? "JPEG" : (extension ?? "Image");
+}
+
+function useElementWidth(elementRef: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+    const updateWidth = () => setWidth(element.clientWidth);
+    updateWidth();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [elementRef]);
+
+  return width;
+}
+
+function useScrollableGalleryLayout() {
+  const [enabled, setEnabled] = useState(
+    () =>
+      typeof window.matchMedia !== "function" ||
+      window.matchMedia("(min-width: 821px)").matches,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(min-width: 821px)");
+    const update = () => setEnabled(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return enabled;
 }
 
 export function LibraryView({
@@ -35,10 +76,97 @@ export function LibraryView({
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
+  const assetGridRef = useRef<HTMLElement>(null);
+  const deferredQuery = useDeferredValue(query);
   const selected = assets.find((asset) => asset.id === selectedId) ?? null;
   const filtered = assets.filter((asset) =>
-    asset.title.toLowerCase().includes(query.toLowerCase()),
+    asset.title.toLowerCase().includes(deferredQuery.toLowerCase()),
   );
+  const gridWidth = useElementWidth(assetGridRef);
+  const scrollableGalleryLayout = useScrollableGalleryLayout();
+  const maximumColumns = selected ? 3 : 4;
+  const columnCount =
+    layout === "list"
+      ? 1
+      : Math.max(
+          1,
+          Math.min(
+            maximumColumns,
+            gridWidth
+              ? Math.floor(
+                  (gridWidth + ASSET_GAP) / (MIN_GRID_TILE_WIDTH + ASSET_GAP),
+                )
+              : maximumColumns,
+          ),
+        );
+  const shouldVirtualize =
+    scrollableGalleryLayout && filtered.length > VIRTUALIZE_AFTER;
+  const rowCount = Math.ceil(filtered.length / columnCount);
+  const estimatedTileWidth =
+    ((gridWidth || (selected ? 700 : 900)) - ASSET_GAP * (columnCount - 1)) /
+    columnCount;
+  const rowVirtualizer = useVirtualizer({
+    count: shouldVirtualize ? rowCount : 0,
+    getScrollElement: () => assetGridRef.current,
+    estimateSize: () =>
+      layout === "list" ? 84 : estimatedTileWidth * 0.75 + 58,
+    getItemKey: (rowIndex) =>
+      `${layout}:${filtered[rowIndex * columnCount]?.id ?? rowIndex}`,
+    overscan: 3,
+    initialRect: { width: 900, height: 600 },
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const visibleRows =
+    virtualRows.length > 0
+      ? virtualRows
+      : [{ index: 0, key: "initial", start: 0 }];
+
+  useEffect(() => {
+    assetGridRef.current?.scrollTo?.({ top: 0 });
+    rowVirtualizer.measure();
+  }, [columnCount, deferredQuery, layout, rowVirtualizer]);
+
+  function renderAsset(asset: LibraryAsset) {
+    return (
+      <button
+        className={`asset-tile ${selected?.id === asset.id ? "selected" : ""}`}
+        type="button"
+        key={asset.src}
+        onClick={() => {
+          setSelectedId(asset.id);
+          setCopyStatus("idle");
+        }}
+      >
+        <span className="asset-image">
+          <img
+            src={asset.src}
+            alt={asset.title}
+            loading="lazy"
+            decoding="async"
+            fetchPriority="low"
+          />
+          <span>
+            {asset.source === "generated"
+              ? "Generated"
+              : asset.source === "imported"
+                ? "Reference"
+                : "Sample"}
+          </span>
+        </span>
+        <span className="asset-copy">
+          <strong>{asset.title}</strong>
+          <small>
+            {asset.width} x {asset.height} /{" "}
+            {asset.source === "generated"
+              ? "Generated"
+              : asset.source === "imported"
+                ? "Imported"
+                : "Bundled"}
+          </small>
+        </span>
+      </button>
+    );
+  }
 
   async function copyPrompt() {
     if (!selected) return;
@@ -107,40 +235,39 @@ export function LibraryView({
         <span className="asset-count">{filtered.length} assets</span>
       </div>
       <div className={`library-content ${selected ? "" : "details-closed"}`}>
-        <section className={`asset-grid ${layout}`}>
-          {filtered.map((asset) => (
-            <button
-              className={`asset-tile ${selected?.id === asset.id ? "selected" : ""}`}
-              type="button"
-              key={asset.src}
-              onClick={() => {
-                setSelectedId(asset.id);
-                setCopyStatus("idle");
-              }}
+        <section
+          ref={assetGridRef}
+          className={`asset-grid ${layout} ${shouldVirtualize ? "virtualized" : ""}`}
+          aria-label="Asset gallery"
+        >
+          {shouldVirtualize ? (
+            <div
+              className="asset-virtualizer"
+              style={{ height: rowVirtualizer.getTotalSize() }}
             >
-              <span className="asset-image">
-                <img src={asset.src} alt={asset.title} />
-                <span>
-                  {asset.source === "generated"
-                    ? "Generated"
-                    : asset.source === "imported"
-                      ? "Reference"
-                      : "Sample"}
-                </span>
-              </span>
-              <span className="asset-copy">
-                <strong>{asset.title}</strong>
-                <small>
-                  {asset.width} x {asset.height} /{" "}
-                  {asset.source === "generated"
-                    ? "Generated"
-                    : asset.source === "imported"
-                      ? "Imported"
-                      : "Bundled"}
-                </small>
-              </span>
-            </button>
-          ))}
+              {visibleRows.map((virtualRow) => {
+                const rowStart = virtualRow.index * columnCount;
+                return (
+                  <div
+                    className={`asset-virtual-row ${layout}`}
+                    data-index={virtualRow.index}
+                    key={virtualRow.key}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {filtered
+                      .slice(rowStart, rowStart + columnCount)
+                      .map(renderAsset)}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            filtered.map(renderAsset)
+          )}
         </section>
         {selected && (
           <aside className="asset-details">

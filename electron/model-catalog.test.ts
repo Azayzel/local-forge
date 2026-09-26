@@ -190,5 +190,75 @@ describe("model catalog compatibility", () => {
       }),
     );
     expect(catalog.items.every((item) => item.verified)).toBe(true);
+    expect(fetcher).not.toHaveBeenCalledWith(
+      expect.stringContaining("search=nsfw"),
+      expect.anything(),
+    );
+  });
+
+  it("discovers NSFW image pipelines only when explicitly enabled", async () => {
+    const requestedUrls: string[] = [];
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.includes("registry.ollama.ai")) {
+        return jsonResponse({ error: "not found" }, 404);
+      }
+      if (url.includes("search=nsfw")) {
+        return jsonResponse([
+          {
+            id: "fixture/nsfw-flux",
+            library_name: "diffusers",
+            pipeline_tag: "text-to-image",
+            tags: ["diffusers", "nsfw", "diffusers:FluxPipeline"],
+          },
+          {
+            id: "fixture/nsfw-sdxl",
+            library_name: "diffusers",
+            pipeline_tag: "text-to-image",
+            tags: ["diffusers", "nsfw", "diffusers:StableDiffusionXLPipeline"],
+          },
+        ]);
+      }
+      if (url.includes("/api/models/fixture/nsfw-sdxl")) {
+        return jsonResponse({
+          id: "fixture/nsfw-sdxl",
+          library_name: "diffusers",
+          pipeline_tag: "text-to-image",
+          gated: false,
+          downloads: 500,
+          tags: ["diffusers", "nsfw", "diffusers:StableDiffusionXLPipeline"],
+          safetensors: { total: 3.5e9 },
+        });
+      }
+      return jsonResponse([]);
+    }) as unknown as typeof fetch;
+
+    const safeCatalog = await discoverModelCatalog(system, fetcher);
+    expect(safeCatalog.items.some((item) => item.nsfw)).toBe(false);
+    expect(requestedUrls.some((url) => url.includes("search=nsfw"))).toBe(
+      false,
+    );
+
+    requestedUrls.length = 0;
+    const adultCatalog = await discoverModelCatalog(system, fetcher, {
+      includeNsfw: true,
+    });
+    expect(requestedUrls.some((url) => url.includes("search=nsfw"))).toBe(true);
+    expect(
+      requestedUrls.some((url) => url.includes("/fixture/nsfw-flux")),
+    ).toBe(false);
+    expect(
+      adultCatalog.items.find(
+        (item) => item.id === "huggingface:fixture/nsfw-sdxl",
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        category: "image",
+        runtime: "diffusers",
+        architecture: "StableDiffusionXLPipeline",
+        nsfw: true,
+      }),
+    );
   });
 });

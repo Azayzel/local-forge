@@ -30,6 +30,21 @@ export interface ChatRequest {
   mcpServers?: McpServerConfig[];
 }
 
+export type VisionDescribeMode = "description" | "prompt";
+
+export interface VisionDescribeRequest {
+  baseUrl: string;
+  model: string;
+  imageUrl: string;
+  mode: VisionDescribeMode;
+}
+
+export interface VisionDescribeResult {
+  text: string;
+  model: string;
+  mode: VisionDescribeMode;
+}
+
 export interface McpServerConfig {
   id: string;
   name: string;
@@ -185,6 +200,22 @@ export interface ImageModel {
   modifiedAt: string;
 }
 
+export interface EnhancementModelPaths {
+  upscalerModelPath: string;
+  faceDetectorModelPath: string;
+  nsfwSegmenterModelPath: string;
+}
+
+export type EnhancementModelKind =
+  | "upscaler"
+  | "faceDetector"
+  | "nsfwSegmenter";
+
+export interface EnhancementInstallResult {
+  kind: EnhancementModelKind;
+  path: string;
+}
+
 export type ModelCatalogCategory = "chat" | "image" | "video" | "training";
 export type ModelCatalogSource = "ollama" | "huggingface";
 export type ModelCatalogRuntime =
@@ -216,6 +247,7 @@ export interface ModelCatalogItem {
   likes?: number;
   updatedAt?: string;
   gated: boolean;
+  nsfw: boolean;
   verified: boolean;
   compatibility: ModelCompatibility;
   compatibilityLabel: string;
@@ -228,6 +260,22 @@ export interface ModelCatalogResponse {
   fetchedAt: string;
   system: SystemSnapshot;
   warnings: string[];
+}
+
+export interface ImageEditRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface StudioImageEdit {
+  sourceImage: string;
+  region: ImageEditRegion;
+  instruction: string;
+  strength: number;
+  width: number;
+  height: number;
 }
 
 export interface ImageGenerationRequest {
@@ -247,6 +295,12 @@ export interface ImageGenerationRequest {
   upscale: boolean;
   upscaleFactor: 2 | 4;
   upscalerModelPath: string;
+  nsfwSegmentation: boolean;
+  nsfwSegmenterModelPath: string;
+  sourceImage?: string;
+  editRegion?: ImageEditRegion;
+  editPrompt?: string;
+  editStrength?: number;
 }
 
 export interface TrainingRequest {
@@ -305,6 +359,7 @@ export interface ForgeApi {
   ollama: {
     health: (baseUrl: string) => Promise<RuntimeHealth>;
     models: (baseUrl: string) => Promise<OllamaModel[]>;
+    warmModel: (baseUrl: string, model: string) => Promise<void>;
     chat: (request: ChatRequest) => Promise<{ ok: boolean }>;
     cancelChat: (requestId: string) => Promise<void>;
     pull: (request: PullRequest) => Promise<{ ok: boolean }>;
@@ -312,9 +367,19 @@ export interface ForgeApi {
     onChatEvent: (callback: (event: ChatStreamEvent) => void) => () => void;
     onPullEvent: (callback: (event: PullStreamEvent) => void) => () => void;
   };
+  vision: {
+    describe: (request: VisionDescribeRequest) => Promise<VisionDescribeResult>;
+  };
   catalog: {
-    list: (refresh?: boolean) => Promise<ModelCatalogResponse>;
+    list: (
+      refresh?: boolean,
+      includeNsfw?: boolean,
+    ) => Promise<ModelCatalogResponse>;
     open: (url: string) => Promise<void>;
+  };
+  enhancements: {
+    discover: () => Promise<EnhancementModelPaths>;
+    install: (kind: EnhancementModelKind) => Promise<EnhancementInstallResult>;
   };
   mcp: {
     testServer: (server: McpServerConfig) => Promise<McpServerStatus>;
@@ -340,5 +405,6 @@ export interface ForgeApi {
     chooseTrainingModel: () => Promise<string | null>;
     chooseUpscalerModel: () => Promise<string | null>;
     chooseFaceDetectorModel: () => Promise<string | null>;
+    chooseNsfwSegmenterModels: () => Promise<string | null>;
   };
 }

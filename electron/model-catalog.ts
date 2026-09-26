@@ -6,6 +6,7 @@ import type {
   ModelCatalogRuntime,
   SystemSnapshot,
 } from "../src/types";
+import { hasNsfwModelTag } from "../src/lib/nsfw";
 
 const GIB = 1024 ** 3;
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -64,6 +65,10 @@ interface CompatibilityInput {
   executorSupported: boolean;
   gated?: boolean;
   unsupportedReason?: string;
+}
+
+interface ModelCatalogDiscoveryOptions {
+  includeNsfw?: boolean;
 }
 
 const OLLAMA_CANDIDATES: OllamaCandidate[] = [
@@ -357,6 +362,7 @@ async function discoverOllama(
         sizeBytes,
         parameters: candidate.parameters,
         gated: false,
+        nsfw: false,
         verified: true,
         ...assessModelCompatibility({
           runtime: "ollama",
@@ -387,7 +393,7 @@ async function discoverOllama(
   };
 }
 
-function huggingFaceSearchUrl(pipeline: string): string {
+function huggingFaceSearchUrl(pipeline: string, search?: string): string {
   const params = new URLSearchParams({
     pipeline_tag: pipeline,
     sort: "downloads",
@@ -395,6 +401,7 @@ function huggingFaceSearchUrl(pipeline: string): string {
     limit: "24",
     full: "true",
   });
+  if (search) params.set("search", search);
   return `https://huggingface.co/api/models?${params}`;
 }
 
@@ -442,6 +449,7 @@ function huggingFaceItem(
   const parameters = modelParameters(model);
   const sizeBytes = modelWeightBytes(model);
   const gated = model.gated !== false && Boolean(model.gated);
+  const nsfw = hasNsfwModelTag(id, architecture, ...tags);
   let runtime: ModelCatalogRuntime = "none";
   let executorSupported = false;
   let unsupportedReason: string | undefined;
@@ -491,6 +499,7 @@ function huggingFaceItem(
     likes: numberValue(model.likes),
     updatedAt: stringValue(model.lastModified) || undefined,
     gated,
+    nsfw,
     verified: true,
     ...assessModelCompatibility({
       runtime,
@@ -516,15 +525,23 @@ async function searchHuggingFaceGroup(
   category: ModelCatalogCategory,
   system: SystemSnapshot,
   fetcher: typeof fetch,
+  options: { search?: string; nsfw?: boolean } = {},
 ): Promise<CatalogFetchResult> {
-  const search = await fetchJson(huggingFaceSearchUrl(pipeline), fetcher);
+  const search = await fetchJson(
+    huggingFaceSearchUrl(pipeline, options.search),
+    fetcher,
+  );
   if (!Array.isArray(search))
     throw new Error("Hugging Face returned an invalid model list.");
   const candidates = (search as HuggingFaceModel[])
     .filter(
       (model) =>
         stringValue(model.library_name) === library &&
-        !stringArray(model.tags).includes("nsfw") &&
+        (options.nsfw
+          ? hasNsfwModelTag(modelId(model), ...stringArray(model.tags))
+          : !hasNsfwModelTag(modelId(model), ...stringArray(model.tags))) &&
+        (!options.nsfw ||
+          SUPPORTED_IMAGE_PIPELINES.has(modelArchitecture(model))) &&
         Boolean(modelId(model)),
     )
     .slice(0, HUGGING_FACE_RESULTS_PER_GROUP);
@@ -566,8 +583,9 @@ async function searchHuggingFaceGroup(
 async function discoverHuggingFace(
   system: SystemSnapshot,
   fetcher: typeof fetch,
+  options: ModelCatalogDiscoveryOptions,
 ): Promise<CatalogFetchResult> {
-  const groups = await Promise.allSettled([
+  const searches = [
     searchHuggingFaceGroup(
       "text-to-image",
       "diffusers",
@@ -596,7 +614,20 @@ async function discoverHuggingFace(
       system,
       fetcher,
     ),
-  ]);
+  ];
+  if (options.includeNsfw) {
+    searches.push(
+      searchHuggingFaceGroup(
+        "text-to-image",
+        "diffusers",
+        "image",
+        system,
+        fetcher,
+        { search: "nsfw", nsfw: true },
+      ),
+    );
+  }
+  const groups = await Promise.allSettled(searches);
   const items: ModelCatalogItem[] = [];
   const warnings: string[] = [];
   for (const group of groups) {
@@ -625,10 +656,11 @@ const COMPATIBILITY_ORDER: Record<ModelCompatibility, number> = {
 export async function discoverModelCatalog(
   system: SystemSnapshot,
   fetcher: typeof fetch = fetch,
+  options: ModelCatalogDiscoveryOptions = {},
 ): Promise<ModelCatalogResponse> {
   const sources = await Promise.allSettled([
     discoverOllama(system, fetcher),
-    discoverHuggingFace(system, fetcher),
+    discoverHuggingFace(system, fetcher, options),
   ]);
   const items: ModelCatalogItem[] = [];
   const warnings: string[] = [];
@@ -644,7 +676,10 @@ export async function discoverModelCatalog(
       );
     }
   }
-  items.sort(
+  const uniqueItems = Array.from(
+    new Map(items.map((item) => [item.id, item])).values(),
+  );
+  uniqueItems.sort(
     (left, right) =>
       COMPATIBILITY_ORDER[left.compatibility] -
         COMPATIBILITY_ORDER[right.compatibility] ||
@@ -652,7 +687,7 @@ export async function discoverModelCatalog(
       left.name.localeCompare(right.name),
   );
   return {
-    items,
+    items: uniqueItems,
     fetchedAt: new Date().toISOString(),
     system,
     warnings,

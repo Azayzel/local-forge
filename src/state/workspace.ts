@@ -1,9 +1,11 @@
 import type {
   AppView,
   ChatMessage,
+  ImageEditRegion,
   ImageModel,
   McpServerConfig,
 } from "../types";
+import { hasNsfwModelTag, isNsfwImageModel } from "../lib/nsfw";
 
 export type ThemeId =
   | "forge"
@@ -61,6 +63,12 @@ export interface ImageRunRecipe {
   faceFixStrength?: number;
   upscale?: boolean;
   upscaleFactor?: 2 | 4;
+  nsfwSegmentation?: boolean;
+  nsfwDefaults?: boolean;
+  sourceImage?: string;
+  editRegion?: ImageEditRegion;
+  editPrompt?: string;
+  editStrength?: number;
 }
 
 export interface TuneRunRecipe {
@@ -91,6 +99,8 @@ export interface StudioState {
   faceFixStrength: number;
   upscale: boolean;
   upscaleFactor: 2 | 4;
+  nsfwSegmentation: boolean;
+  nsfwDefaults: boolean;
   activeAsset: string;
 }
 
@@ -117,6 +127,7 @@ export interface LibraryAsset {
   createdAt: string;
   prompt: string;
   outputPath?: string;
+  nsfw?: boolean;
 }
 
 export interface ForgeSettings {
@@ -124,9 +135,11 @@ export interface ForgeSettings {
   pythonPath: string;
   upscalerModelPath: string;
   faceDetectorModelPath: string;
+  nsfwSegmenterModelPath: string;
   selectedModel: string;
   temperature: number;
   contextLength: number;
+  nsfwConsent: boolean;
   reduceMotion: boolean;
   compactMode: boolean;
   theme: ThemeId;
@@ -179,7 +192,9 @@ export function createDefaultStudioState(): StudioState {
     faceFixStrength: 0.45,
     upscale: false,
     upscaleFactor: 2,
-    activeAsset: "/demo/forge-01.jpg",
+    nsfwSegmentation: false,
+    nsfwDefaults: false,
+    activeAsset: "./demo/forge-01.jpg",
   };
 }
 
@@ -202,7 +217,7 @@ export function createDefaultAssets(): LibraryAsset[] {
   return [
     {
       id: "sample-neon-observer",
-      src: "/demo/forge-01.jpg",
+      src: "./demo/forge-01.jpg",
       title: "Neon observer",
       source: "sample",
       width: 1200,
@@ -213,7 +228,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-quiet-geometry",
-      src: "/demo/forge-02.jpg",
+      src: "./demo/forge-02.jpg",
       title: "Quiet geometry",
       source: "sample",
       width: 1200,
@@ -224,7 +239,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-material-study",
-      src: "/demo/forge-03.jpg",
+      src: "./demo/forge-03.jpg",
       title: "Material study",
       source: "sample",
       width: 1200,
@@ -235,7 +250,7 @@ export function createDefaultAssets(): LibraryAsset[] {
     },
     {
       id: "sample-open-country",
-      src: "/demo/forge-04.jpg",
+      src: "./demo/forge-04.jpg",
       title: "Open country",
       source: "sample",
       width: 1200,
@@ -264,9 +279,11 @@ export function createDefaultWorkspace(): WorkspaceState {
       pythonPath: "python",
       upscalerModelPath: "",
       faceDetectorModelPath: "",
+      nsfwSegmenterModelPath: "",
       selectedModel: "",
       temperature: 0.7,
       contextLength: 8192,
+      nsfwConsent: false,
       reduceMotion: false,
       compactMode: false,
       theme: "forge",
@@ -296,6 +313,10 @@ function normalizeMcpServers(value: unknown): McpServerConfig[] {
       typeof server.headers === "object",
     ),
   );
+}
+
+function normalizeBundledAssetUrl(value: string): string {
+  return value.startsWith("/demo/") ? `.${value}` : value;
 }
 
 const MAX_RUN_LOGS = 200;
@@ -380,17 +401,60 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
         ),
       )
     : [];
+  const nsfwRunOutputs = new Set(
+    runs.flatMap((run) => {
+      const recipe = run.recipe;
+      if (
+        recipe?.kind !== "image" ||
+        (!recipe.nsfwDefaults &&
+          !hasNsfwModelTag(recipe.modelId, recipe.modelName))
+      ) {
+        return [];
+      }
+      return [run.outputUrl, run.outputPath].filter((value): value is string =>
+        Boolean(value),
+      );
+    }),
+  );
   const assets = Array.isArray(candidate.assets)
-    ? candidate.assets.filter((asset): asset is LibraryAsset =>
-        Boolean(
-          asset &&
-          typeof asset.id === "string" &&
-          typeof asset.src === "string" &&
-          typeof asset.title === "string",
-        ),
-      )
+    ? candidate.assets
+        .filter((asset): asset is LibraryAsset =>
+          Boolean(
+            asset &&
+            typeof asset.id === "string" &&
+            typeof asset.src === "string" &&
+            typeof asset.title === "string",
+          ),
+        )
+        .map((asset) => ({
+          ...asset,
+          src: normalizeBundledAssetUrl(asset.src),
+          nsfw:
+            asset.nsfw === true ||
+            nsfwRunOutputs.has(asset.src) ||
+            Boolean(asset.outputPath && nsfwRunOutputs.has(asset.outputPath)),
+        }))
     : fallback.assets;
+  const nsfwConsent = candidate.settings?.nsfwConsent === true;
   const studio = { ...fallback.studio, ...candidate.studio };
+  studio.activeAsset = normalizeBundledAssetUrl(studio.activeAsset);
+  studio.nsfwDefaults = nsfwConsent && studio.nsfwDefaults === true;
+  const selectedStudioModel = imageModels.find(
+    (model) => model.id === studio.model,
+  );
+  if (!studio.nsfwDefaults && selectedStudioModel) {
+    if (isNsfwImageModel(selectedStudioModel)) studio.model = "";
+  }
+  if (!nsfwConsent && candidate.studio?.nsfwDefaults === true) {
+    studio.prompt = fallback.studio.prompt;
+    studio.negativePrompt = fallback.studio.negativePrompt;
+  }
+  if (
+    !nsfwConsent &&
+    assets.some((asset) => asset.src === studio.activeAsset && asset.nsfw)
+  ) {
+    studio.activeAsset = assets.find((asset) => !asset.nsfw)?.src ?? "";
+  }
   const tune = { ...fallback.tune, ...candidate.tune };
   if (studio.model === "Flux.1 Schnell") studio.model = "";
 
@@ -412,6 +476,7 @@ export function normalizeWorkspace(value: unknown): WorkspaceState {
     settings: {
       ...fallback.settings,
       ...candidate.settings,
+      nsfwConsent,
       pythonPath:
         typeof candidate.settings?.pythonPath === "string" &&
         candidate.settings.pythonPath.trim()

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { forgeApi } from "../../lib/forge-api";
+import { hasNsfwModelTag } from "../../lib/nsfw";
 import {
   createDefaultTuneState,
   type ForgeRun,
@@ -300,11 +301,20 @@ export function TuneView({
 
 interface ActivityViewProps {
   runs: ForgeRun[];
+  nsfwConsent: boolean;
   onCancel: (id: string) => void;
   onReveal: (outputPath: string) => void;
   onRemove: (id: string) => void;
   onRetry: (run: ForgeRun) => void;
   onOpenImage: (run: ForgeRun) => void;
+}
+
+function isNsfwRun(run: ForgeRun): boolean {
+  const recipe = run.recipe;
+  return Boolean(
+    recipe?.kind === "image" &&
+    (recipe.nsfwDefaults || hasNsfwModelTag(recipe.modelId, recipe.modelName)),
+  );
 }
 
 function formatRunTime(value: string | undefined): string {
@@ -355,6 +365,9 @@ function RunRecipe({ run }: { run: ForgeRun }) {
           ...(recipe.upscale
             ? [["Upscale", `${recipe.upscaleFactor ?? 2}x`]]
             : []),
+          ...(recipe.nsfwSegmentation
+            ? [["NSFW segmentation", "Save detected-region masks"]]
+            : []),
           ["Prompt", recipe.prompt],
           ...(recipe.negativePrompt
             ? [["Negative prompt", recipe.negativePrompt]]
@@ -387,6 +400,7 @@ function RunRecipe({ run }: { run: ForgeRun }) {
 
 export function ActivityView({
   runs,
+  nsfwConsent,
   onCancel,
   onReveal,
   onRemove,
@@ -408,6 +422,9 @@ export function ActivityView({
       ? runs
       : runs.filter((run) => run.status === statusFilter);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+  const selectedRunRestricted = Boolean(
+    selectedRun && !nsfwConsent && isNsfwRun(selectedRun),
+  );
 
   async function copyLogs(run: ForgeRun) {
     const entries = run.logs?.length
@@ -531,7 +548,11 @@ export function ActivityView({
               >
                 <span>
                   <strong>{run.name}</strong>
-                  <small>{run.error ?? run.message ?? run.detail}</small>
+                  <small>
+                    {!nsfwConsent && isNsfwRun(run)
+                      ? "Adult content hidden"
+                      : (run.error ?? run.message ?? run.detail)}
+                  </small>
                 </span>
                 <span className="run-kind">{run.kind}</span>
                 <span className={`run-status ${run.status}`}>
@@ -620,11 +641,19 @@ export function ActivityView({
                 <strong>{selectedRun.progress}%</strong>
               </div>
 
-              {selectedRun.kind === "image" && selectedRun.outputUrl && (
-                <div className="run-output-preview">
-                  <img src={selectedRun.outputUrl} alt={selectedRun.name} />
+              {selectedRunRestricted && (
+                <div className="run-output-preview restricted-output">
+                  <span>Adult content hidden</span>
                 </div>
               )}
+
+              {!selectedRunRestricted &&
+                selectedRun.kind === "image" &&
+                selectedRun.outputUrl && (
+                  <div className="run-output-preview">
+                    <img src={selectedRun.outputUrl} alt={selectedRun.name} />
+                  </div>
+                )}
 
               {selectedRun.error && (
                 <div className="run-error" role="alert">
@@ -652,7 +681,7 @@ export function ActivityView({
                 </div>
               </dl>
 
-              {selectedRun.outputPath && (
+              {!selectedRunRestricted && selectedRun.outputPath && (
                 <section className="run-detail-section">
                   <span className="eyebrow">Output</span>
                   <code className="run-output-path">
@@ -661,7 +690,7 @@ export function ActivityView({
                 </section>
               )}
 
-              <RunRecipe run={selectedRun} />
+              {!selectedRunRestricted && <RunRecipe run={selectedRun} />}
 
               <section className="run-detail-section run-log-section">
                 <header>
@@ -729,7 +758,7 @@ export function ActivityView({
                     <Square size={14} /> Cancel
                   </button>
                 )}
-                {selectedRun.outputPath && (
+                {!selectedRunRestricted && selectedRun.outputPath && (
                   <button
                     className="secondary-button"
                     type="button"
@@ -745,16 +774,19 @@ export function ActivityView({
                       : "Show output"}
                   </button>
                 )}
-                {selectedRun.kind === "image" && selectedRun.outputUrl && (
-                  <button
-                    className="primary-button"
-                    type="button"
-                    onClick={() => onOpenImage(selectedRun)}
-                  >
-                    <Images size={14} /> Open in Studio
-                  </button>
-                )}
-                {selectedRun.recipe &&
+                {!selectedRunRestricted &&
+                  selectedRun.kind === "image" &&
+                  selectedRun.outputUrl && (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => onOpenImage(selectedRun)}
+                    >
+                      <Images size={14} /> Open in Studio
+                    </button>
+                  )}
+                {!selectedRunRestricted &&
+                  selectedRun.recipe &&
                   selectedRun.status !== "queued" &&
                   selectedRun.status !== "running" && (
                     <button
@@ -1139,6 +1171,11 @@ export function SettingsView({
     if (selected) onChange({ faceDetectorModelPath: selected });
   }
 
+  async function browseNsfwSegmenterModels() {
+    const selected = await forgeApi.dialog.chooseNsfwSegmenterModels();
+    if (selected) onChange({ nsfwSegmenterModelPath: selected });
+  }
+
   return (
     <main className="tool-view settings-view">
       <header className="tool-header">
@@ -1307,6 +1344,35 @@ export function SettingsView({
               <section className="settings-section">
                 <div className="section-heading">
                   <div>
+                    <span className="eyebrow">Content access</span>
+                    <h2>Adult content</h2>
+                  </div>
+                </div>
+                <label className="toggle-row">
+                  <span>
+                    <strong>Allow NSFW content</strong>
+                    <small>
+                      I confirm I am an adult and consent to viewing and
+                      generating NSFW content on this device
+                    </small>
+                  </span>
+                  <input
+                    type="checkbox"
+                    aria-label="Allow NSFW content"
+                    checked={settings.nsfwConsent}
+                    onChange={(event) =>
+                      onChange({ nsfwConsent: event.target.checked })
+                    }
+                  />
+                </label>
+                <p className="settings-description">
+                  This reveals adult model and prompt controls in Studio. It
+                  does not download models or enable them automatically.
+                </p>
+              </section>
+              <section className="settings-section">
+                <div className="section-heading">
+                  <div>
                     <span className="eyebrow">Defaults</span>
                     <h2>Text generation</h2>
                   </div>
@@ -1410,9 +1476,35 @@ export function SettingsView({
                       </button>
                     </div>
                   </label>
+                  {settings.nsfwConsent && (
+                    <label>
+                      <span>NSFW segmentation models</span>
+                      <div className="compound-input">
+                        <input
+                          value={settings.nsfwSegmenterModelPath}
+                          placeholder="nsfw_segmentation"
+                          spellCheck={false}
+                          onChange={(event) =>
+                            onChange({
+                              nsfwSegmenterModelPath: event.target.value,
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          title="Browse NSFW segmentation models"
+                          aria-label="Browse NSFW segmentation models"
+                          onClick={() => void browseNsfwSegmenterModels()}
+                        >
+                          <FolderOpen size={15} />
+                        </button>
+                      </div>
+                    </label>
+                  )}
                   <p className="mcp-caution">
-                    Model files stay local. Local Forge does not download or
-                    bundle third-party enhancement weights.
+                    Install actions download pinned, checksum-verified weights
+                    to Local Forge storage. You can also choose compatible local
+                    files manually.
                   </p>
                 </div>
               </section>

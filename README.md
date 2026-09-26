@@ -28,6 +28,8 @@ Local Forge is a fast, local-first desktop workbench for open models. Chat with 
 - Persistent sessions, image attachments, search, pinning, and deletion
 - Local Diffusers and `.safetensors` / `.ckpt` model registration
 - Cancellable image generation with live step progress and Library import
+- Local image descriptions and generation prompts through Ollama vision models
+- Optional Face Fix, tiled 2x/4x UltraSharp upscaling, and saved NSFW region masks
 - Cancellable QLoRA training with live progress and standard PEFT output
 - Screenshot and reference-image imports shared by Studio and Library
 - Live RAM and NVIDIA telemetry, with unavailable data left unknown
@@ -47,4 +49,4 @@ npm run dev
 
 Opening Vite directly uses a browser preview adapter. Use the Electron window for filesystem imports, MCP servers, encrypted credential persistence, and real hardware data.
 
-See the [runtime and project guide](docs/RUNTIME_AND_PROJECT_GUIDE.md) for image and training setup, MCP servers, validation, releases, and project status.
+See the [runtime and project guide](docs/RUNTIME_AND_PROJECT_GUIDE.md) for image and training setup, MCP servers, validation, releases, and project status. See the [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), [asset notes](docs/THIRD_PARTY_ASSETS.md), and [MIT License](LICENSE) for repository policies and project details.

@@ -23,8 +23,12 @@ describe("workspace state", () => {
     expect(workspace.settings.pythonPath).toBe("python");
     expect(workspace.settings.upscalerModelPath).toBe("");
     expect(workspace.settings.faceDetectorModelPath).toBe("");
+    expect(workspace.settings.nsfwSegmenterModelPath).toBe("");
+    expect(workspace.settings.nsfwConsent).toBe(false);
     expect(workspace.studio.upscale).toBe(false);
     expect(workspace.studio.faceFix).toBe(false);
+    expect(workspace.studio.nsfwSegmentation).toBe(false);
+    expect(workspace.studio.nsfwDefaults).toBe(false);
     expect(workspace.tune.gradientAccumulation).toBe(8);
   });
 
@@ -61,6 +65,80 @@ describe("workspace state", () => {
     expect(workspace.settings.temperature).toBe(0.2);
     expect(workspace.settings.contextLength).toBe(8192);
     expect(workspace.settings.theme).toBe("forge");
+  });
+
+  it("does not restore NSFW defaults without persisted consent", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.settings.nsfwConsent = false;
+    persisted.studio.nsfwDefaults = true;
+    persisted.studio.prompt = "Persisted adult prompt";
+    persisted.studio.model = "adult-model";
+    persisted.imageModels = [
+      {
+        id: "adult-model",
+        name: "portrait-nsfw",
+        path: "D:/models/portrait-nsfw",
+        format: "diffusers",
+        architecture: "StableDiffusionPipeline",
+        modifiedAt: "2026-09-25T00:00:00.000Z",
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.settings.nsfwConsent).toBe(false);
+    expect(workspace.studio.nsfwDefaults).toBe(false);
+    expect(workspace.studio.model).toBe("");
+    expect(workspace.studio.prompt).toBe(
+      createDefaultWorkspace().studio.prompt,
+    );
+  });
+
+  it("marks gallery assets linked to legacy adult runs as restricted", () => {
+    const persisted = createDefaultWorkspace();
+    const outputUrl = "local-forge-output://image/adult.png";
+    persisted.assets = [
+      {
+        id: "legacy-adult-output",
+        src: outputUrl,
+        title: "Legacy output",
+        source: "generated",
+        width: 1024,
+        height: 1024,
+        createdAt: "2026-09-25T00:00:00.000Z",
+        prompt: "Stored prompt",
+      },
+      ...persisted.assets,
+    ];
+    persisted.studio.activeAsset = outputUrl;
+    persisted.runs = [
+      {
+        id: "legacy-adult-run",
+        kind: "image",
+        name: "Legacy render",
+        status: "complete",
+        progress: 100,
+        startedAt: "2026-09-25T00:00:00.000Z",
+        outputUrl,
+        recipe: {
+          kind: "image",
+          modelId: "portrait-nsfw-xl",
+          modelName: "Portrait NSFW XL",
+          prompt: "Stored prompt",
+          negativePrompt: "",
+          width: 1024,
+          height: 1024,
+          steps: 24,
+          guidance: 5.5,
+          seed: 42,
+        },
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.assets[0].nsfw).toBe(true);
+    expect(workspace.studio.activeAsset).not.toBe(outputUrl);
   });
 
   it("migrates version one workspaces and preserves MCP configuration", () => {
@@ -149,6 +227,45 @@ describe("workspace state", () => {
     });
   });
 
+  it("preserves masked edit recipes for retries", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.runs = [
+      {
+        id: "image-edit-run",
+        kind: "image",
+        name: "Studio selected edit",
+        status: "complete",
+        progress: 100,
+        startedAt: "2026-09-24T10:00:00.000Z",
+        recipe: {
+          kind: "image",
+          modelId: "local-diffusers",
+          modelName: "Local Diffusers",
+          prompt: "Editorial portrait",
+          negativePrompt: "text, watermark",
+          width: 1024,
+          height: 768,
+          steps: 24,
+          guidance: 5.5,
+          seed: 42,
+          sourceImage: "local-forge-output://image/source.png",
+          editRegion: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+          editPrompt: "Move the subject to the left",
+          editStrength: 0.7,
+        },
+      },
+    ];
+
+    const workspace = normalizeWorkspace(persisted);
+
+    expect(workspace.runs[0].recipe).toMatchObject({
+      sourceImage: "local-forge-output://image/source.png",
+      editRegion: { x: 0.2, y: 0.15, width: 0.5, height: 0.6 },
+      editPrompt: "Move the subject to the left",
+      editStrength: 0.7,
+    });
+  });
+
   it("bounds persisted job logs and discards invalid entries", () => {
     const logs = Array.from({ length: 205 }, (_, index) => ({
       timestamp: `2026-09-24T10:00:${String(index).padStart(2, "0")}.000Z`,
@@ -210,6 +327,17 @@ describe("workspace state", () => {
     expect(migrated.studio.model).toBe("");
     expect(restored.imageModels).toHaveLength(1);
     expect(restored.studio.model).toBe("D:/models/real-model");
+  });
+
+  it("makes legacy bundled image URLs relative for packaged Electron", () => {
+    const persisted = createDefaultWorkspace();
+    persisted.studio.activeAsset = "/demo/forge-01.jpg";
+    persisted.assets[0].src = "/demo/forge-01.jpg";
+
+    const restored = normalizeWorkspace(persisted);
+
+    expect(restored.studio.activeAsset).toBe("./demo/forge-01.jpg");
+    expect(restored.assets[0].src).toBe("./demo/forge-01.jpg");
   });
 });
 

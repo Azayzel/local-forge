@@ -142,15 +142,50 @@ jobs:
               exit 1
             fi
           done
-          sha256sum -- *.exe *.dmg *.AppImage > SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
+          python <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          
+          files = []
+          for extension in ("exe", "dmg", "AppImage"):
+              files.extend(sorted(Path(".").glob(f"*.{extension}")))
+          
+          with Path("SHA256SUMS.txt").open("w", encoding="utf-8") as manifest:
+              for path in files:
+                  manifest.write(f"{path.name}\t{sha256(path.read_bytes()).hexdigest()}\n")
+          
+          entries = {}
+          with Path("SHA256SUMS.txt").open("r", encoding="utf-8") as manifest:
+              for line in manifest:
+                  name, digest = line.rstrip("\n").split("\t", 1)
+                  entries[name] = digest
+          
+          for path in files:
+              digest = sha256(path.read_bytes()).hexdigest()
+              if entries.get(path.name) != digest:
+                  raise SystemExit(f"Checksum mismatch for {path.name}")
+          PY
 
       - name: Publish complete prerelease
         working-directory: artifacts
         shell: bash
         run: |
-          state=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
-            --jq '.[] | select(.tag_name == env.RELEASE_TAG) | .draft')
+          owner=${GH_REPO%/*}
+          repo=${GH_REPO#*/}
+          state=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$repo" \
+            -F tag="$RELEASE_TAG" \
+            -f query='
+              query($owner: String!, $name: String!, $tag: String!) {
+                repository(owner: $owner, name: $name) {
+                  release(tagName: $tag) {
+                    isDraft
+                  }
+                }
+              }
+            ' \
+            --jq '.data.repository.release | if . == null then "" else .isDraft end')
           if [[ "$state" == "false" ]]; then
             echo "Release $RELEASE_TAG is already published; leaving its assets unchanged."
             exit 0

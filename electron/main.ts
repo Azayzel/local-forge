@@ -20,6 +20,9 @@ import {
 import type {
   ChatRequest,
   ChatStreamEvent,
+  EnhancementInstallResult,
+  EnhancementModelKind,
+  EnhancementModelPaths,
   ImageAttachment,
   ImageGenerationRequest,
   ImageModel,
@@ -34,8 +37,15 @@ import type {
   RuntimeHealth,
   SystemSnapshot,
   TrainingRequest,
+  VisionDescribeRequest,
+  VisionDescribeResult,
 } from "../src/types";
-import { runMcpChat } from "./chat";
+import { runMcpChat, warmChatModel } from "./chat";
+import {
+  discoverEnhancementModels,
+  installEnhancementModel,
+} from "./enhancement-models";
+import { describeImageWithOllama } from "./vision";
 import { LocalJobManager } from "./jobs";
 import { closeMcpConnections, disconnectMcpServer, testMcpServer } from "./mcp";
 import { discoverModelCatalog } from "./model-catalog";
@@ -72,8 +82,10 @@ const MODEL_SCAN_IGNORES = new Set([
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceWrite = Promise.resolve();
-let modelCatalogCache: ModelCatalogResponse | null = null;
-let modelCatalogExpiresAt = 0;
+const modelCatalogCache = new Map<
+  boolean,
+  { value: ModelCatalogResponse; expiresAt: number }
+>();
 const jobs = new LocalJobManager({
   runtimeDirectory: () =>
     app.isPackaged
@@ -175,15 +187,50 @@ function emitJob(sender: WebContents, event: JobEvent): void {
   });
 }
 
-async function imageForOllama(value: string): Promise<string> {
+function enhancementModelRoots(): string[] {
+  const appRoot = app.getAppPath();
+  return [
+    path.join(app.getPath("userData"), "models"),
+    path.join(appRoot, "models"),
+    path.join(process.resourcesPath, "models"),
+    path.resolve(appRoot, "..", "Lavely-LLM", "models"),
+    path.resolve(process.cwd(), "..", "Lavely-LLM", "models"),
+  ].filter((root, index, roots) => roots.indexOf(root) === index);
+}
+
+async function localImageFilePath(value: string): Promise<string> {
   if (value.startsWith(`${ATTACHMENT_SCHEME}:`)) {
-    return (await fs.readFile(attachmentFilePath(value))).toString("base64");
+    return attachmentFilePath(value);
   }
+  if (value.startsWith(`${OUTPUT_SCHEME}:`)) {
+    return outputImageFilePath(value);
+  }
+  if (/^\.?\/demo\/[A-Za-z0-9_-]+\.(?:png|jpe?g|webp)$/i.test(value)) {
+    const relative = value.replace(/^\.?\//, "");
+    const candidates = [
+      path.join(app.getAppPath(), "dist", relative),
+      path.join(app.getAppPath(), "public", relative),
+    ];
+    for (const candidate of candidates) {
+      try {
+        if ((await fs.stat(candidate)).isFile()) return candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    throw new Error(`Bundled reference image was not found: ${value}`);
+  }
+  throw new Error("Unsupported Local Forge image URL.");
+}
+
+async function imageForOllama(value: string): Promise<string> {
   if (value.startsWith("data:")) {
     const separator = value.indexOf(",");
     return separator >= 0 ? value.slice(separator + 1) : value;
   }
-  return value;
+  return (await fs.readFile(await localImageFilePath(value))).toString(
+    "base64",
+  );
 }
 
 async function describeDiffusersModel(
@@ -552,13 +599,21 @@ async function getSystemSnapshot(): Promise<SystemSnapshot> {
   }
 }
 
-async function getModelCatalog(refresh = false): Promise<ModelCatalogResponse> {
-  if (!refresh && modelCatalogCache && modelCatalogExpiresAt > Date.now()) {
-    return modelCatalogCache;
+async function getModelCatalog(
+  refresh = false,
+  includeNsfw = false,
+): Promise<ModelCatalogResponse> {
+  const cached = modelCatalogCache.get(includeNsfw);
+  if (!refresh && cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
-  const catalog = await discoverModelCatalog(await getSystemSnapshot());
-  modelCatalogCache = catalog;
-  modelCatalogExpiresAt = Date.now() + MODEL_CATALOG_TTL_MS;
+  const catalog = await discoverModelCatalog(await getSystemSnapshot(), fetch, {
+    includeNsfw,
+  });
+  modelCatalogCache.set(includeNsfw, {
+    value: catalog,
+    expiresAt: Date.now() + MODEL_CATALOG_TTL_MS,
+  });
   return catalog;
 }
 
@@ -642,12 +697,29 @@ function registerIpc(): void {
   ipcMain.handle("ollama:models", (_event, baseUrl: string) =>
     listModels(baseUrl),
   );
+  ipcMain.handle(
+    "ollama:warm-model",
+    (_event, baseUrl: string, model: string) => warmChatModel(baseUrl, model),
+  );
   ipcMain.handle("ollama:chat", (event, request: ChatRequest) =>
     streamChat(event.sender, request),
   );
   ipcMain.handle("ollama:cancel-chat", (_event, requestId: string) => {
     activeChats.get(requestId)?.abort();
   });
+  ipcMain.handle(
+    "vision:describe",
+    async (
+      _event,
+      request: VisionDescribeRequest,
+    ): Promise<VisionDescribeResult> =>
+      describeImageWithOllama({
+        baseUrl: request.baseUrl,
+        model: request.model,
+        imageBase64: await imageForOllama(request.imageUrl),
+        mode: request.mode,
+      }),
+  );
   ipcMain.handle("ollama:pull", (event, request: PullRequest) =>
     pullModel(event.sender, request),
   );
@@ -655,11 +727,28 @@ function registerIpc(): void {
     activePulls.get(requestId)?.abort();
   });
 
-  ipcMain.handle("catalog:list", (_event, refresh: boolean) =>
-    getModelCatalog(Boolean(refresh)),
+  ipcMain.handle(
+    "catalog:list",
+    (_event, refresh: boolean, includeNsfw: boolean) =>
+      getModelCatalog(Boolean(refresh), Boolean(includeNsfw)),
   );
   ipcMain.handle("catalog:open", (_event, url: string) =>
     shell.openExternal(modelCatalogUrl(url)),
+  );
+
+  ipcMain.handle(
+    "enhancements:discover",
+    (): Promise<EnhancementModelPaths> =>
+      discoverEnhancementModels(enhancementModelRoots()),
+  );
+  ipcMain.handle(
+    "enhancements:install",
+    (_event, kind: EnhancementModelKind): Promise<EnhancementInstallResult> =>
+      installEnhancementModel(
+        path.join(app.getPath("userData"), "models"),
+        kind,
+        (url) => net.fetch(url),
+      ),
   );
 
   ipcMain.handle("mcp:test-server", (_event, server: McpServerConfig) =>
@@ -672,7 +761,13 @@ function registerIpc(): void {
   ipcMain.handle(
     "jobs:start-image",
     async (event, request: ImageGenerationRequest) => {
-      await jobs.startImage(request, (jobEvent) =>
+      const resolvedRequest = request.sourceImage
+        ? {
+            ...request,
+            sourceImage: await localImageFilePath(request.sourceImage),
+          }
+        : request;
+      await jobs.startImage(resolvedRequest, (jobEvent) =>
         emitJob(event.sender, jobEvent),
       );
       return { ok: true };
@@ -846,6 +941,18 @@ function registerIpc(): void {
       return result.canceled ? null : (result.filePaths[0] ?? null);
     },
   );
+
+  ipcMain.handle(
+    "dialog:choose-nsfw-segmenter-models",
+    async (): Promise<string | null> => {
+      const result = await dialog.showOpenDialog({
+        title: "Select an NSFW segmentation model directory",
+        buttonLabel: "Select models",
+        properties: ["openDirectory"],
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+  );
 }
 
 function createWindow(): void {
@@ -891,7 +998,7 @@ function createWindow(): void {
 
 registerIpc();
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   app.setAppUserModelId("io.localforge.desktop");
   void protocol.handle(ATTACHMENT_SCHEME, async (request) => {
     try {
@@ -910,6 +1017,9 @@ void app.whenReady().then(() => {
     } catch {
       return new Response("Output not found.", { status: 404 });
     }
+  });
+  await jobs.cleanupPreviews().catch((error) => {
+    console.warn("Could not remove temporary image previews:", error);
   });
   createWindow();
   app.on("activate", () => {

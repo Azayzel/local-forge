@@ -3,6 +3,9 @@ import type {
   AppInfo,
   ChatRequest,
   ChatStreamEvent,
+  EnhancementInstallResult,
+  EnhancementModelKind,
+  EnhancementModelPaths,
   ForgeApi,
   ImageAttachment,
   ImageGenerationRequest,
@@ -18,6 +21,8 @@ import type {
   RuntimeHealth,
   SystemSnapshot,
   TrainingRequest,
+  VisionDescribeRequest,
+  VisionDescribeResult,
 } from "../src/types";
 
 function subscribe<T>(
@@ -52,6 +57,8 @@ const api: ForgeApi = {
       ipcRenderer.invoke("ollama:health", baseUrl) as Promise<RuntimeHealth>,
     models: (baseUrl: string) =>
       ipcRenderer.invoke("ollama:models", baseUrl) as Promise<OllamaModel[]>,
+    warmModel: (baseUrl: string, model: string) =>
+      ipcRenderer.invoke("ollama:warm-model", baseUrl, model) as Promise<void>,
     chat: (request: ChatRequest) =>
       ipcRenderer.invoke("ollama:chat", request) as Promise<{ ok: boolean }>,
     cancelChat: (requestId: string) =>
@@ -65,13 +72,32 @@ const api: ForgeApi = {
     onPullEvent: (callback: (event: PullStreamEvent) => void) =>
       subscribe("ollama:pull-event", callback),
   },
+  vision: {
+    describe: (request: VisionDescribeRequest) =>
+      ipcRenderer.invoke(
+        "vision:describe",
+        request,
+      ) as Promise<VisionDescribeResult>,
+  },
   catalog: {
-    list: (refresh = false) =>
+    list: (refresh = false, includeNsfw = false) =>
       ipcRenderer.invoke(
         "catalog:list",
         refresh,
+        includeNsfw,
       ) as Promise<ModelCatalogResponse>,
     open: (url: string) => ipcRenderer.invoke("catalog:open", url),
+  },
+  enhancements: {
+    discover: () =>
+      ipcRenderer.invoke(
+        "enhancements:discover",
+      ) as Promise<EnhancementModelPaths>,
+    install: (kind: EnhancementModelKind) =>
+      ipcRenderer.invoke(
+        "enhancements:install",
+        kind,
+      ) as Promise<EnhancementInstallResult>,
   },
   mcp: {
     testServer: (server: McpServerConfig) =>
@@ -121,6 +147,10 @@ const api: ForgeApi = {
       >,
     chooseFaceDetectorModel: () =>
       ipcRenderer.invoke("dialog:choose-face-detector-model") as Promise<
+        string | null
+      >,
+    chooseNsfwSegmenterModels: () =>
+      ipcRenderer.invoke("dialog:choose-nsfw-segmenter-models") as Promise<
         string | null
       >,
   },

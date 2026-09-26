@@ -11,7 +11,9 @@ python -m pip install -r runtime/requirements-training.txt
 
 Select that interpreter under **Settings > Runtimes > Python runtime**. Local Forge never installs Python packages or downloads model weights automatically.
 
-Studio executes local Diffusers directories containing `model_index.json`. Registered `.safetensors` and `.ckpt` files remain visible for inventory but must be converted to Diffusers format before generation. Completed PNGs are added to Library and stored under Local Forge's user-data `outputs/images` directory.
+Studio executes local Diffusers directories containing `model_index.json`. Registered `.safetensors` and `.ckpt` files remain visible for inventory but must be converted to Diffusers format before generation. Completed PNGs are added to Library and stored under Local Forge's user-data `outputs/images` directory. Optional NSFW segmentation writes one binary mask per detected region beside the completed image.
+
+The Studio **Describe image** and **Create prompt** actions use the Ollama model currently selected in Workbench. That model must advertise Ollama's `vision` capability. Local Forge does not pre-classify or block adult images; description quality and model-level refusals depend on the selected vision model.
 
 Tune requires a local Hugging Face Transformers model directory containing `config.json`; Ollama tags and GGUF files are inference artifacts and are not offered as trainable base models. Datasets may be JSON, JSONL, or CSV and should contain either a `text` field or chat `messages`. Completed adapters use standard PEFT format under `outputs/adapters`.
 
@@ -35,17 +37,17 @@ npm run build
 
 ## Automated releases
 
-Every push to `main` (including a merged pull request) runs tests, lint, and the application build. After those checks pass, GitHub Actions packages that exact commit for Windows x64 (`.exe`), macOS universal (`.dmg`, Intel and Apple Silicon), and Linux x64 (`.AppImage`).
+Every push to `main` (including a merged pull request) runs tests, lint, and the application build. After those checks pass, GitHub Actions packages that exact commit for Windows x64 (`.exe`), one universal macOS `.dmg` that runs on both Intel and Apple Silicon, and Linux x64 (`.AppImage`).
 
 Download installers from [GitHub Releases](https://github.com/Azayzel/local-forge/releases). Each main build is an unsigned prerelease, tagged `v<package-version>-main.<test-run-number>` (for example, `v0.1.0-main.42`). The installer version matches the tag without its `v` prefix. These alpha builds are not marked as the latest stable release.
 
-All three installers and `SHA256SUMS.txt` are uploaded before the release is published. To verify a download, compare its SHA-256 hash with the matching entry in that file:
+All three installers and `SHA256SUMS.txt` are uploaded before the release is published. That file lists one tab-separated `filename<TAB>sha256` entry per installer. To verify a download, compare its SHA-256 hash with the matching entry in that file:
 
 ```powershell
 Get-FileHash .\Local-Forge-0.1.0-main.42-win-x64.exe -Algorithm SHA256
 ```
 
-Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS use `shasum -a 256 -c SHA256SUMS.txt`.
+Use your downloaded installer's actual filename. On Linux, run `sha256sum ./Local-Forge-0.1.0-main.42-linux-x64.AppImage`; on macOS run `shasum -a 256 ./Local-Forge-0.1.0-main.42-mac-universal.dmg`; in either case, compare the printed hash with the matching entry in `SHA256SUMS.txt`.
 
 Windows and macOS may show security warnings: these builds are not yet signed or notarized. See [release maintenance](../CONTRIBUTING.md#release-maintenance) for setup, versioning, and retries.
 

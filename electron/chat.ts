@@ -7,6 +7,7 @@ import type {
 import { callMcpTool, listEnabledMcpTools, type McpToolBinding } from "./mcp";
 
 const MAX_TOOL_ROUNDS = 8;
+const MODEL_KEEP_ALIVE = "30m";
 
 interface OllamaToolCall {
   function: {
@@ -40,16 +41,38 @@ interface RoundResult {
   evalDurationNs: number;
 }
 
-function runtimeEndpoint(baseUrl: string): string {
+function runtimeEndpoint(baseUrl: string, route = "/api/chat"): string {
   const url = new URL(baseUrl);
   const localHosts = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
   if (url.protocol !== "http:" || !localHosts.has(url.hostname)) {
     throw new Error("Local Forge only connects to runtimes on this machine.");
   }
-  url.pathname = "/api/chat";
+  url.pathname = route;
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+export async function warmChatModel(
+  baseUrl: string,
+  model: string,
+): Promise<void> {
+  if (!model.trim()) return;
+  const response = await fetch(runtimeEndpoint(baseUrl, "/api/generate"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      prompt: "",
+      stream: false,
+      keep_alive: MODEL_KEEP_ALIVE,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Runtime returned ${response.status}.`);
+  }
+  await response.text();
 }
 
 async function readJsonLines(
@@ -135,6 +158,8 @@ async function runRound(
       model: options.request.model,
       messages,
       options: options.request.options,
+      think: false,
+      keep_alive: MODEL_KEEP_ALIVE,
       tools: bindings.length > 0 ? toolDefinitions(bindings) : undefined,
       stream: true,
     }),

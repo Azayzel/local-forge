@@ -26,7 +26,7 @@ process.stdin.on("end", () => {
         total: 2,
       })}\n`,
     );
-    const preview = path.join(output, "fixture-preview-1.png");
+    const preview = path.join(output, "preview-fixture-1.png");
     fs.writeFileSync(preview, "preview");
     process.stdout.write(
       `${JSON.stringify({
