@@ -149,8 +149,7 @@ jobs:
         working-directory: artifacts
         shell: bash
         run: |
-          state=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
-            --jq '.[] | select(.tag_name == env.RELEASE_TAG) | .draft')
+          state=$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq '.isDraft' 2>/dev/null || true)
           if [[ "$state" == "false" ]]; then
             echo "Release $RELEASE_TAG is already published; leaving its assets unchanged."
             exit 0
