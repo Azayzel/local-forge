@@ -37,7 +37,7 @@ npm run build
 
 ## Automated releases
 
-Every push to `main` (including a merged pull request) runs tests, lint, and the application build. After those checks pass, GitHub Actions packages that exact commit for Windows x64 (`.exe`), macOS universal (`.dmg`, Intel and Apple Silicon), and Linux x64 (`.AppImage`).
+Every push to `main` (including a merged pull request) runs tests, lint, and the application build. After those checks pass, GitHub Actions packages that exact commit for Windows x64 (`.exe`), one universal macOS `.dmg` that runs on both Intel and Apple Silicon, and Linux x64 (`.AppImage`).
 
 Download installers from [GitHub Releases](https://github.com/Azayzel/local-forge/releases). Each main build is an unsigned prerelease, tagged `v<package-version>-main.<test-run-number>` (for example, `v0.1.0-main.42`). The installer version matches the tag without its `v` prefix. These alpha builds are not marked as the latest stable release.
 
