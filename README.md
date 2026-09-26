@@ -49,4 +49,4 @@ npm run dev
 
 Opening Vite directly uses a browser preview adapter. Use the Electron window for filesystem imports, MCP servers, encrypted credential persistence, and real hardware data.
 
-See the [runtime and project guide](docs/RUNTIME_AND_PROJECT_GUIDE.md) for image and training setup, MCP servers, validation, releases, and project status.
+See the [runtime and project guide](docs/RUNTIME_AND_PROJECT_GUIDE.md) for image and training setup, MCP servers, validation, releases, and project status. See the [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md), [asset notes](docs/THIRD_PARTY_ASSETS.md), and [MIT License](LICENSE) for repository policies and project details.

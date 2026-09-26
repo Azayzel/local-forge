@@ -41,13 +41,13 @@ Every push to `main` (including a merged pull request) runs tests, lint, and the
 
 Download installers from [GitHub Releases](https://github.com/Azayzel/local-forge/releases). Each main build is an unsigned prerelease, tagged `v<package-version>-main.<test-run-number>` (for example, `v0.1.0-main.42`). The installer version matches the tag without its `v` prefix. These alpha builds are not marked as the latest stable release.
 
-All three installers and `SHA256SUMS.txt` are uploaded before the release is published. To verify a download, compare its SHA-256 hash with the matching entry in that file:
+All three installers and `SHA256SUMS.txt` are uploaded before the release is published. That file lists one tab-separated `filename<TAB>sha256` entry per installer. To verify a download, compare its SHA-256 hash with the matching entry in that file:
 
 ```powershell
 Get-FileHash .\Local-Forge-0.1.0-main.42-win-x64.exe -Algorithm SHA256
 ```
 
-Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS use `shasum -a 256 -c SHA256SUMS.txt`.
+Use your downloaded installer's actual filename. On Linux, run `sha256sum ./Local-Forge-0.1.0-main.42-linux-x64.AppImage`; on macOS run `shasum -a 256 ./Local-Forge-0.1.0-main.42-mac-universal.dmg`; in either case, compare the printed hash with the matching entry in `SHA256SUMS.txt`.
 
 Windows and macOS may show security warnings: these builds are not yet signed or notarized. See [release maintenance](../CONTRIBUTING.md#release-maintenance) for setup, versioning, and retries.
 
