@@ -47,7 +47,7 @@ All three installers and `SHA256SUMS.txt` are uploaded before the release is pub
 Get-FileHash .\Local-Forge-0.1.0-main.42-win-x64.exe -Algorithm SHA256
 ```
 
-Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS use `shasum -a 256 -c SHA256SUMS.txt`.
+Use your downloaded installer's actual filename. On Linux, download all three installers and the checksum file into one directory and run `sha256sum --check SHA256SUMS.txt`; on macOS run `shasum -a 256 ./Local-Forge-0.1.0-main.42-mac-universal.dmg` and compare the hash it prints with the matching line in `SHA256SUMS.txt`.
 
 Windows and macOS may show security warnings: these builds are not yet signed or notarized. See [release maintenance](../CONTRIBUTING.md#release-maintenance) for setup, versioning, and retries.
 
