@@ -149,20 +149,22 @@ jobs:
         working-directory: artifacts
         shell: bash
         run: |
-          release_view_stderr=$(mktemp)
-          if state=$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq '.isDraft' 2>"$release_view_stderr"); then
-            :
-          else
-            status=$?
-            if grep -qi 'release not found' "$release_view_stderr"; then
-              state=
-            else
-              cat "$release_view_stderr" >&2
-              rm -f "$release_view_stderr"
-              exit "$status"
-            fi
-          fi
-          rm -f "$release_view_stderr"
+          owner=${GH_REPO%/*}
+          repo=${GH_REPO#*/}
+          state=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$repo" \
+            -F tag="$RELEASE_TAG" \
+            -f query='
+              query($owner: String!, $name: String!, $tag: String!) {
+                repository(owner: $owner, name: $name) {
+                  release(tagName: $tag) {
+                    isDraft
+                  }
+                }
+              }
+            ' \
+            --jq '.data.repository.release | if . == null then "" else .isDraft end')
           if [[ "$state" == "false" ]]; then
             echo "Release $RELEASE_TAG is already published; leaving its assets unchanged."
             exit 0
