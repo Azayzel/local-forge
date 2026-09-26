@@ -142,8 +142,8 @@ jobs:
               exit 1
             fi
           done
-          sha256sum -- *.exe *.dmg *.AppImage > SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
+          shasum -a 256 -- *.exe *.dmg *.AppImage > SHA256SUMS.txt
+          shasum -a 256 -c SHA256SUMS.txt
 
       - name: Publish complete prerelease
         working-directory: artifacts
