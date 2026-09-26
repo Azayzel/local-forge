@@ -49,6 +49,7 @@
   "build": {
     "appId": "io.localforge.desktop",
     "productName": "Local Forge",
+    "artifactName": "Local-Forge-${version}-${os}-${arch}.${ext}",
     "icon": "build/icon.png",
     "asar": true,
     "directories": {
