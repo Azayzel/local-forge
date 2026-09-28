@@ -90,6 +90,7 @@ export function ModelsView({
   const [catalog, setCatalog] = useState<ModelCatalogResponse | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
+  const [catalogOpenError, setCatalogOpenError] = useState("");
   const [customModel, setCustomModel] = useState("");
   const [pull, setPull] = useState<PullStreamEvent | null>(null);
   const installedNames = new Set(models.map((model) => model.name));
@@ -158,6 +159,17 @@ export function ModelsView({
   function refreshAll() {
     onRefresh();
     void loadCatalog(true);
+  }
+
+  async function openModelPage(url: string) {
+    setCatalogOpenError("");
+    try {
+      await forgeApi.catalog.open(url);
+    } catch {
+      setCatalogOpenError(
+        "Could not open the model page in your browser. Check that a default browser is configured and try again.",
+      );
+    }
   }
 
   return (
@@ -266,6 +278,11 @@ export function ModelsView({
         {catalogError && (
           <p className="catalog-notice danger">{catalogError}</p>
         )}
+        {catalogOpenError && (
+          <p className="catalog-notice danger" role="alert">
+            {catalogOpenError}
+          </p>
+        )}
         {catalog?.warnings.length ? (
           <p className="catalog-notice">{catalog.warnings.join(" ")}</p>
         ) : null}
@@ -348,7 +365,7 @@ export function ModelsView({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => void forgeApi.catalog.open(model.url)}
+                        onClick={() => void openModelPage(model.url)}
                       >
                         <ExternalLink size={14} /> View
                       </button>
