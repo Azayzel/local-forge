@@ -58,6 +58,35 @@ afterEach(() => {
 });
 
 describe("ModelsView", () => {
+  it("opens Hugging Face pages through the catalog API and reports failures", async () => {
+    vi.spyOn(forgeApi.catalog, "list").mockResolvedValue(catalog);
+    const open = vi
+      .spyOn(forgeApi.catalog, "open")
+      .mockRejectedValueOnce(new Error("No default browser"))
+      .mockResolvedValue(undefined);
+    render(
+      <ModelsView
+        health={{ online: true, latencyMs: 8 }}
+        models={[]}
+        baseUrl="http://127.0.0.1:11434"
+        selectedModel=""
+        nsfwConsent
+        onSelect={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "View" }));
+    expect(open).toHaveBeenCalledWith(catalog.items[0].url);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not open the model page in your browser.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
   it("discovers and searches NSFW pipelines only after consent", async () => {
     const listCatalog = vi
       .spyOn(forgeApi.catalog, "list")

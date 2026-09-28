@@ -49,6 +49,7 @@ import { describeImageWithOllama } from "./vision";
 import { LocalJobManager } from "./jobs";
 import { closeMcpConnections, disconnectMcpServer, testMcpServer } from "./mcp";
 import { discoverModelCatalog } from "./model-catalog";
+import { registerExternalNavigation } from "./navigation";
 import { mapWorkspaceMcpSecrets } from "./workspace-secrets";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -979,15 +980,10 @@ function createWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    const developmentUrl = process.env.VITE_DEV_SERVER_URL;
-    if (!developmentUrl || !url.startsWith(developmentUrl))
-      event.preventDefault();
-  });
+  registerExternalNavigation(
+    mainWindow.webContents,
+    process.env.VITE_DEV_SERVER_URL,
+  );
 
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
